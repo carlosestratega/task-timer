@@ -46,11 +46,13 @@ const isThisWeek = (s) => {
 const isWithinDays = (s, d) => (new Date() - parseSessionDate(s)) / 864e5 <= d;
 
 // ─── Storage ───────────────────────────────────────────
-const THEME_KEY = "task-timer-theme", LOCAL_KEY = "task-timer-data";
+const THEME_KEY = "task-timer-theme", LOCAL_KEY = "task-timer-data", TAGS_KEY = "task-timer-tags";
 const saveTheme = (d) => { try { localStorage.setItem(THEME_KEY, JSON.stringify(d)); } catch (e) {} };
 const loadTheme = () => { try { const r = localStorage.getItem(THEME_KEY); if (r !== null) return JSON.parse(r); } catch (e) {} return true; };
 const saveLocal = (c) => { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(c)); } catch (e) {} };
 const loadLocal = () => { try { const r = localStorage.getItem(LOCAL_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; };
+const saveTags = (t) => { try { localStorage.setItem(TAGS_KEY, JSON.stringify(t)); } catch (e) {} };
+const loadTags = () => { try { const r = localStorage.getItem(TAGS_KEY); if (r) return JSON.parse(r); } catch (e) {} return ["Podcast", "Música", "Llamada", "Reunión"]; };
 
 // ─── Icons ─────────────────────────────────────────────
 const I = {
@@ -79,9 +81,10 @@ const I = {
   note: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14,2H6A2,2,0,0,0,4,4V20a2,2,0,0,0,2,2H18a2,2,0,0,0,2-2V8Z" /><polyline points="14,2 14,8 20,8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>,
   target: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>,
   fire: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12,2C6.5,7,4,11,4,14a8,8,0,0,0,16,0C20,11,17.5,7,12,2Z" /></svg>,
+  tag: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59,13.41l-7.17,7.17a2,2,0,0,1-2.83,0L2,12V2H12l8.59,8.59A2,2,0,0,1,20.59,13.41Z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>,
 };
 
-const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
+const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16", "#eab308", "#a855f7"];
 
 const defaultCategories = [
   { id: "cat-1", name: "Contenido", color: "#6366f1", tasks: [
@@ -99,31 +102,38 @@ const ensureTask = (t) => ({ subtasks: [], notes: "", goalDaily: 0, completed: f
 // ─── Cloud Sync ────────────────────────────────────────
 function useCloudSync(user) {
   const [cloudData, setCloudData] = useState(null);
+  const [cloudTags, setCloudTags] = useState(null);
   const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const unsubRef = useRef(null);
 
   useEffect(() => {
-    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); setCloudLoaded(false); return; }
+    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); setCloudTags(null); setCloudLoaded(false); return; }
     const docRef = doc(db, "users", user.uid);
     unsubRef.current = onSnapshot(docRef, (snap) => {
-      setCloudData(snap.exists() ? (snap.data().categories || []) : []);
+      if (snap.exists()) {
+        setCloudData(snap.data().categories || []);
+        setCloudTags(snap.data().tags || null);
+      } else {
+        setCloudData([]);
+        setCloudTags(null);
+      }
       setCloudLoaded(true);
     }, (err) => console.warn("Firestore error:", err));
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
 
-  const saveToCloud = useCallback(async (cats) => {
+  const saveToCloud = useCallback(async (cats, tags) => {
     if (!user) return;
     setSyncing(true);
     try {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ({ ...ensureTask(t), isRunning: false, currentSeconds: 0 })) }));
-      await setDoc(doc(db, "users", user.uid), { categories: clean, updatedAt: new Date().toISOString() });
+      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tags || [], updatedAt: new Date().toISOString() });
     } catch (e) { console.warn("Save error:", e); }
     setSyncing(false);
   }, [user]);
 
-  return { cloudData, cloudLoaded, saveToCloud, syncing };
+  return { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing };
 }
 
 // ─── Profile Menu ──────────────────────────────────────
@@ -439,12 +449,15 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [noteModal, setNoteModal] = useState(null);
+  const [tags, setTags] = useState(loadTags);
+  const [activeTags, setActiveTags] = useState([]);
+  const [newTagName, setNewTagName] = useState("");
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
   const fileRef = useRef(null);
 
-  const { cloudData, cloudLoaded, saveToCloud, syncing } = useCloudSync(user);
+  const { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing } = useCloudSync(user);
 
   // Auth
   useEffect(() => {
@@ -468,13 +481,15 @@ export default function App() {
     if (cloudData && cloudData.length > 0) {
       const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(data); saveLocal(data); setExpanded(new Set(data.map((c) => c.id)));
-    } else { saveToCloud(categories); }
+      if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
+    } else { saveToCloud(categories, tags); }
   }, [cloudData, cloudLoaded, user]);
 
   useEffect(() => {
     saveLocal(categories);
-    if (user && initDone.current) { if (saveRef.current) clearTimeout(saveRef.current); saveRef.current = setTimeout(() => saveToCloud(categories), 2000); }
-  }, [categories, user, saveToCloud]);
+    saveTags(tags);
+    if (user && initDone.current) { if (saveRef.current) clearTimeout(saveRef.current); saveRef.current = setTimeout(() => saveToCloud(categories, tags), 2000); }
+  }, [categories, tags, user, saveToCloud]);
 
   // Theme
   useEffect(() => { saveTheme(dk); document.body.style.background = dk ? "#0a0a0a" : "#fafafa"; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dk ? "#0a0a0a" : "#fafafa"); }, [dk]);
@@ -494,14 +509,16 @@ export default function App() {
 
   const stopTask = (id) => {
     clearInterval(intRef.current);
+    const sessionTags = [...activeTags];
     setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
       if (t.id === id && t.currentSeconds > 0) {
         const now = new Date();
-        return { ...t, isRunning: false, totalSeconds: t.totalSeconds + t.currentSeconds, sessions: [...t.sessions, { duration: t.currentSeconds, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "" }], currentSeconds: 0 };
+        return { ...t, isRunning: false, totalSeconds: t.totalSeconds + t.currentSeconds, sessions: [...t.sessions, { duration: t.currentSeconds, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: sessionTags }], currentSeconds: 0 };
       }
       return t.id === id ? { ...t, isRunning: false, currentSeconds: 0 } : t;
     }) })));
     setActive(null);
+    setActiveTags([]);
   };
 
   const toggleTimer = (id) => {
@@ -530,6 +547,11 @@ export default function App() {
   const addSubtask = (taskId, name) => { if (!name.trim()) return; setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
   const toggleSubtask = (taskId, stId) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) }))); };
   const delSubtask = (taskId, stId) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) }))); };
+
+  // Tags
+  const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; setTags((p) => [...p, name.trim()]); };
+  const delTag = (name) => { setTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => p.filter((t) => t !== name)); };
+  const toggleActiveTag = (name) => { setActiveTags((p) => p.includes(name) ? p.filter((t) => t !== name) : [...p, name]); };
 
   // Session notes
   const saveSessionNote = (taskId, sessIdx, note) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; s[sessIdx] = { ...s[sessIdx], note }; return { ...t, sessions: s }; }) }))); setNoteModal(null); };
@@ -595,6 +617,35 @@ export default function App() {
               </div>
             )}
 
+            {/* Tags - visible when timer is active */}
+            {active === timerView && (
+              <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
+                <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} Mientras tanto...</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {tags.map((tag) => (
+                    <button key={tag} onClick={() => toggleActiveTag(tag)} style={{ padding: "6px 14px", borderRadius: 20, border: activeTags.includes(tag) ? "none" : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}22` : "transparent", color: activeTags.includes(tag) ? c.color : theme.textSec, fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                  <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
+                  <button onClick={() => { if (newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} style={{ padding: "0 10px", borderRadius: 8, border: "none", backgroundColor: c.color, color: "#fff", fontSize: 12, fontWeight: 600 }}>+</button>
+                </div>
+              </div>
+            )}
+            {/* Active tags display when not running */}
+            {active !== timerView && t.sessions.length > 0 && (() => {
+              const lastSess = t.sessions[t.sessions.length - 1];
+              return (lastSess.tags && lastSess.tags.length > 0) ? (
+                <div style={{ marginTop: 16, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
+                  {lastSess.tags.map((tag) => (
+                    <span key={tag} style={{ padding: "3px 10px", borderRadius: 12, backgroundColor: dk ? "#1c1c1c" : "#eee", fontSize: 11, color: theme.textSec }}>{tag}</span>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+
             {/* Stats */}
             <div style={{ marginTop: 28, display: "flex", gap: 32, color: theme.textSec, fontSize: 14 }}>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 600, color: theme.text, opacity: 0.8 }}>{fmtLong(t.totalSeconds)}</div><div>Total</div></div>
@@ -634,6 +685,7 @@ export default function App() {
                         </div>
                       </div>
                       {s.note && <div style={{ fontSize: 12, color: theme.textSec, marginTop: 3, fontStyle: "italic" }}>{s.note}</div>}
+                      {s.tags && s.tags.length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>{s.tags.map((tag) => <span key={tag} style={{ padding: "2px 8px", borderRadius: 10, backgroundColor: dk ? "#1c1c1c" : "#eee", fontSize: 11, color: theme.textSec }}>{tag}</span>)}</div>}
                     </div>
                   );
                 })}
