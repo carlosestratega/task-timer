@@ -449,6 +449,7 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [noteModal, setNoteModal] = useState(null);
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const [tags, setTags] = useState(loadTags);
   const [activeTags, setActiveTags] = useState([]);
   const [newTagName, setNewTagName] = useState("");
@@ -555,6 +556,7 @@ export default function App() {
 
   // Session notes
   const saveSessionNote = (taskId, sessIdx, note) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; s[sessIdx] = { ...s[sessIdx], note }; return { ...t, sessions: s }; }) }))); setNoteModal(null); };
+  const delSession = (taskId, sessIdx) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   // Import/Export
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -672,16 +674,18 @@ export default function App() {
             {/* Sessions */}
             {t.sessions.length > 0 && (
               <div style={{ marginTop: 24, maxWidth: 320, width: "90%" }}>
-                <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Últimas sesiones</div>
-                {t.sessions.slice(-5).reverse().map((s, i) => {
+                <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Sesiones ({t.sessions.length})</div>
+                {(showAllSessions ? t.sessions : t.sessions.slice(-5)).slice().reverse().map((s, i) => {
+                  const displayed = showAllSessions ? t.sessions.length : Math.min(5, t.sessions.length);
                   const si = t.sessions.length - 1 - i;
                   return (
-                    <div key={i} style={{ padding: "7px 0", borderBottom: `1px solid ${theme.border}` }}>
+                    <div key={si} style={{ padding: "7px 0", borderBottom: `1px solid ${theme.border}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: theme.textSec }}>
                         <span>{fmtShort(s.duration)}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span>{s.date ? `${s.date} · ${s.endedAt}` : s.endedAt}</span>
                           <button onClick={() => setNoteModal({ taskId: timerView, sessIdx: si, note: s.note || "" })} style={{ background: "none", border: "none", color: s.note ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 2, opacity: s.note ? 1 : 0.4 }}>{I.note}</button>
+                          <button onClick={() => setModal({ title: "¿Eliminar sesión?", message: `${fmtShort(s.duration)} · ${s.date || ""} ${s.endedAt || ""}. Se restará del tiempo total.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delSession(timerView, si) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
                         </div>
                       </div>
                       {s.note && <div style={{ fontSize: 12, color: theme.textSec, marginTop: 3, fontStyle: "italic" }}>{s.note}</div>}
@@ -689,6 +693,11 @@ export default function App() {
                     </div>
                   );
                 })}
+                {t.sessions.length > 5 && (
+                  <button onClick={() => setShowAllSessions(!showAllSessions)} style={{ width: "100%", padding: "8px 0", marginTop: 4, background: "none", border: "none", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>
+                    {showAllSessions ? "Ver menos" : `Ver todas (${t.sessions.length})`}
+                  </button>
+                )}
               </div>
             )}
           </div>
