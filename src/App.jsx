@@ -93,6 +93,7 @@ const ICONS = {
   sun: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>,
   reset: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1,4 1,10 7,10" /><path d="M3.51,15a9,9,0,1,0,2.13-9.36L1,10" /></svg>,
   download: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21,15v4a2,2,0,0,1-2,2H5a2,2,0,0,1-2-2V15" /><polyline points="7,10 12,15 17,10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>,
+  upload: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21,15v4a2,2,0,0,1-2,2H5a2,2,0,0,1-2-2V15" /><polyline points="17,8 12,3 7,8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>,
   google: <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>,
   logout: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9,21H5a2,2,0,0,1-2-2V5A2,2,0,0,1,5,3h4" /><polyline points="16,17 21,12 16,7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>,
   cloud: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18,10h-1.26A8,8,0,1,0,9,20h9a5,5,0,0,0,0-10z" /></svg>,
@@ -125,15 +126,17 @@ const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4
 // ─── Cloud Sync ────────────────────────────────────────
 function useCloudSync(user) {
   const [cloudData, setCloudData] = useState(null);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const unsubRef = useRef(null);
 
   useEffect(() => {
-    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); return; }
+    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); setCloudLoaded(false); return; }
     const docRef = doc(db, "users", user.uid);
     unsubRef.current = onSnapshot(docRef, (snap) => {
       if (snap.exists()) setCloudData(snap.data().categories || []);
-      else setCloudData(null);
+      else setCloudData([]);
+      setCloudLoaded(true);
     }, (err) => console.warn("Firestore error:", err));
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
@@ -149,7 +152,7 @@ function useCloudSync(user) {
     setSyncing(false);
   }, [user]);
 
-  return { cloudData, saveToCloud, syncing };
+  return { cloudData, cloudLoaded, saveToCloud, syncing };
 }
 
 // ─── Profile Menu ──────────────────────────────────────
@@ -401,7 +404,7 @@ export default function App() {
   const saveTimeoutRef = useRef(null);
   const initialLoadDone = useRef(false);
 
-  const { cloudData, saveToCloud, syncing } = useCloudSync(user);
+  const { cloudData, cloudLoaded, saveToCloud, syncing } = useCloudSync(user);
 
   // Auth — redirect on mobile, popup on desktop
   useEffect(() => {
@@ -433,13 +436,24 @@ export default function App() {
     initialLoadDone.current = false;
   };
 
+  // Sync: cloud → local (or local → cloud if cloud is empty)
   useEffect(() => {
-    if (cloudData && user && !initialLoadDone.current) {
-      initialLoadDone.current = true;
-      if (cloudData.length > 0) { setCategories(cloudData); saveLocal(cloudData); setExpandedCats(new Set(cloudData.map((c) => c.id))); }
-    }
-  }, [cloudData, user]);
+    if (!user || !cloudLoaded || initialLoadDone.current) return;
 
+    initialLoadDone.current = true;
+
+    if (cloudData && cloudData.length > 0) {
+      // Cloud has data: load it locally
+      setCategories(cloudData);
+      saveLocal(cloudData);
+      setExpandedCats(new Set(cloudData.map((c) => c.id)));
+    } else {
+      // Cloud is empty: push local data up
+      saveToCloud(categories);
+    }
+  }, [cloudData, cloudLoaded, user]);
+
+  // Save changes to local + cloud
   useEffect(() => {
     saveLocal(categories);
     if (user && initialLoadDone.current) {
@@ -562,6 +576,44 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const fileInputRef = useRef(null);
+
+  const importData = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (Array.isArray(data) && data.length > 0) {
+          setConfirmModal({
+            title: "¿Importar datos?",
+            message: `Se encontraron ${data.length} categorías con ${data.reduce((s, c) => s + (c.tasks?.length || 0), 0)} tareas. Esto reemplazará todos tus datos actuales.`,
+            confirmLabel: "Importar",
+            confirmColor: "#6366f1",
+            onConfirm: () => {
+              if (activeTask) { clearInterval(intervalRef.current); setActiveTask(null); }
+              const cleaned = data.map(cat => ({
+                ...cat,
+                tasks: (cat.tasks || []).map(t => ({ ...t, isRunning: false, currentSeconds: 0, completed: t.completed || false }))
+              }));
+              setCategories(cleaned);
+              setExpandedCats(new Set(cleaned.map(c => c.id)));
+              setTimerView(null);
+              setConfirmModal(null);
+            }
+          });
+        } else {
+          alert("El archivo no tiene un formato válido.");
+        }
+      } catch (err) {
+        alert("Error al leer el archivo. Asegúrate de que es un JSON válido.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   const activeTaskData = timerView ? getTask(timerView) : null;
   const totalToday = categories.reduce((s, c) => s + c.tasks.reduce((a, t) => a + t.totalSeconds + (t.isRunning ? t.currentSeconds : 0), 0), 0);
 
@@ -631,6 +683,8 @@ export default function App() {
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
             <button onClick={() => { setShowNewCategory(true); setShowNewTask(null); }} style={{ flex: 1, background: theme.accent, border: "none", borderRadius: 10, color: darkMode ? "#000" : "#fff", cursor: "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, fontWeight: 600 }}>{ICONS.plus}<span>Nueva categoría</span></button>
             <button onClick={exportData} title="Exportar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{ICONS.download}</button>
+            <button onClick={() => fileInputRef.current?.click()} title="Importar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{ICONS.upload}</button>
+            <input ref={fileInputRef} type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
           </div>
         </div>
 
