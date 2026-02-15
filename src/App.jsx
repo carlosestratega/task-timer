@@ -6,6 +6,8 @@ import {
   getRedirectResult,
   onAuthStateChanged,
   signOut,
+  browserLocalPersistence,
+  setPersistence,
 } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 
@@ -403,22 +405,24 @@ export default function App() {
 
   // Auth — redirect on mobile, popup on desktop
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setAuthLoading(false); });
-    getRedirectResult(auth).then((result) => {
-      if (result?.user) setUser(result.user);
-    }).catch((err) => console.warn("Redirect result error:", err));
-    return unsub;
+    setPersistence(auth, browserLocalPersistence).then(() => {
+      const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setAuthLoading(false); });
+      getRedirectResult(auth).then((result) => {
+        if (result?.user) setUser(result.user);
+      }).catch((err) => console.warn("Redirect result error:", err));
+      return unsub;
+    }).catch(() => setAuthLoading(false));
   }, []);
 
   const handleLogin = async () => {
-    if (isMobile()) {
-      try { await signInWithRedirect(auth, googleProvider); } catch (e) { console.warn("Redirect error:", e); }
-    } else {
-      try { await signInWithPopup(auth, googleProvider); }
-      catch (err) {
-        if (err.code === "auth/popup-blocked") {
-          try { await signInWithRedirect(auth, googleProvider); } catch (e) {}
-        }
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      if (err.code === "auth/popup-blocked" || err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+        try { await signInWithRedirect(auth, googleProvider); } catch (e) { console.warn("Redirect error:", e); }
+      } else {
+        console.warn("Auth error:", err);
       }
     }
   };
