@@ -9,7 +9,7 @@ import {
   browserLocalPersistence,
   setPersistence,
 } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 
 // ─── Helpers ───────────────────────────────────────────
 const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -105,24 +105,36 @@ function useCloudSync(user) {
   const [cloudTags, setCloudTags] = useState(null);
   const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [remoteChange, setRemoteChange] = useState(0); // increments on external changes
+  const unsubRef = useRef(null);
+  const lastSaveTime = useRef(null);
 
-  // Load once when user logs in (no real-time listener)
   useEffect(() => {
-    if (!user) { setCloudData(null); setCloudTags(null); setCloudLoaded(false); return; }
-    const load = async () => {
-      try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        if (snap.exists()) {
-          setCloudData(snap.data().categories || []);
-          setCloudTags(snap.data().tags || null);
-        } else {
-          setCloudData([]);
-          setCloudTags(null);
+    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); setCloudTags(null); setCloudLoaded(false); return; }
+    const docRef = doc(db, "users", user.uid);
+    let firstLoad = true;
+    unsubRef.current = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setCloudData(data.categories || []);
+        setCloudTags(data.tags || null);
+        // After first load, check if this is from another device
+        if (!firstLoad && lastSaveTime.current) {
+          const cloudTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
+          const diff = Math.abs(cloudTime - lastSaveTime.current);
+          // If cloud update is >3s different from our last save, it's from another device
+          if (diff > 3000) {
+            setRemoteChange((p) => p + 1);
+          }
         }
-      } catch (e) { console.warn("Cloud load error:", e); setCloudData([]); }
+      } else {
+        setCloudData([]);
+        setCloudTags(null);
+      }
       setCloudLoaded(true);
-    };
-    load();
+      firstLoad = false;
+    }, (err) => console.warn("Firestore error:", err));
+    return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
 
   const saveToCloud = useCallback(async (cats, tags) => {
@@ -130,12 +142,14 @@ function useCloudSync(user) {
     setSyncing(true);
     try {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ({ ...ensureTask(t), currentSeconds: 0 })) }));
-      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tags || [], updatedAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      lastSaveTime.current = new Date(now).getTime();
+      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tags || [], updatedAt: now });
     } catch (e) { console.warn("Save error:", e); }
     setSyncing(false);
   }, [user]);
 
-  return { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing };
+  return { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing, remoteChange };
 }
 
 // ─── Profile Menu ──────────────────────────────────────
@@ -469,7 +483,7 @@ export default function App() {
   const initDone = useRef(false);
   const fileRef = useRef(null);
 
-  const { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing } = useCloudSync(user);
+  const { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing, remoteChange } = useCloudSync(user);
 
   // Auth
   useEffect(() => {
@@ -523,14 +537,42 @@ export default function App() {
     }
   }, [cloudData, cloudLoaded, user]);
 
+  const immediateSave = useRef(false);
+
   useEffect(() => {
     saveLocal(categories);
     saveTags(tags);
     if (user && initDone.current) {
       if (saveRef.current) clearTimeout(saveRef.current);
-      saveRef.current = setTimeout(() => saveToCloud(categories, tags), 5000);
+      const delay = immediateSave.current ? 300 : 3000;
+      immediateSave.current = false;
+      saveRef.current = setTimeout(() => saveToCloud(categories, tags), delay);
     }
   }, [categories, tags, user, saveToCloud]);
+
+  // Handle remote changes from other devices
+  useEffect(() => {
+    if (remoteChange === 0 || !cloudData || !initDone.current) return;
+    let resumeId = null;
+    const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+      const task = ensureTask(t);
+      if (task.isRunning && task.startedAt) {
+        const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
+        if (elapsed > 0 && elapsed < 86400) {
+          task.currentSeconds = elapsed;
+          resumeId = task.id;
+        } else {
+          task.isRunning = false; task.startedAt = null; task.currentSeconds = 0;
+        }
+      }
+      return task;
+    }) }));
+    setCat(data); saveLocal(data);
+    if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
+    // Update active timer state
+    if (resumeId && !active) { setActive(resumeId); }
+    if (!resumeId && active) { clearInterval(intRef.current); setActive(null); }
+  }, [remoteChange]);
 
   // Theme
   useEffect(() => { saveTheme(dk); document.body.style.background = dk ? "#0a0a0a" : "#fafafa"; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dk ? "#0a0a0a" : "#fafafa"); }, [dk]);
@@ -572,6 +614,7 @@ export default function App() {
   const stopTask = (id) => {
     clearInterval(intRef.current);
     const sessionTags = [...activeTags];
+    immediateSave.current = true;
     setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
       if (t.id === id && t.startedAt) {
         const duration = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
@@ -589,7 +632,7 @@ export default function App() {
 
   const toggleTimer = (id) => {
     if (active === id) stopTask(id);
-    else { if (active) stopTask(active); const now = new Date().toISOString(); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, currentSeconds: 0, startedAt: now } : t) }))); setActive(id); setTimerView(id); }
+    else { if (active) stopTask(active); immediateSave.current = true; const now = new Date().toISOString(); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, currentSeconds: 0, startedAt: now } : t) }))); setActive(id); setTimerView(id); }
   };
 
   // CRUD
