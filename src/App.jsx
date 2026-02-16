@@ -288,11 +288,26 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
   const [hours, setHours] = useState(durH);
   const [mins, setMins] = useState(durM);
   const [secs, setSecs] = useState(durS);
+  const [endTime, setEndTime] = useState(session.endedAt || "");
+  // Parse date from dateISO or date string
+  const initDate = (() => {
+    if (session.dateISO) { const d = new Date(session.dateISO); return d.toISOString().slice(0, 10); }
+    if (session.date) { const p = session.date.split("/"); if (p.length === 3) return `${p[2]}-${p[1].padStart(2, "0")}-${p[0].padStart(2, "0")}`; }
+    return new Date().toISOString().slice(0, 10);
+  })();
+  const [dateVal, setDateVal] = useState(initDate);
   const newDuration = Math.max(0, hours * 3600 + mins * 60 + secs);
   const toggleTag = (t) => setSessTags((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t]);
   return (
     <Modal title="Editar sesión" onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha y hora</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} style={{ width: 110, padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+          </div>
+        </div>
         <div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Duración</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -336,7 +351,13 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
         </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-          <button onClick={() => onSave(taskId, sessIdx, { note, mood, duration: newDuration, tags: sessTags })} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+          <button onClick={() => {
+            // Build new dateISO from date + time
+            const newDateISO = dateVal && endTime ? new Date(`${dateVal}T${endTime}`).toISOString() : session.dateISO;
+            const dp = dateVal ? dateVal.split("-") : null;
+            const newDate = dp ? `${dp[2]}/${dp[1]}/${dp[0]}` : session.date;
+            onSave(taskId, sessIdx, { note, mood, duration: newDuration, tags: sessTags, endedAt: endTime || session.endedAt, date: newDate, dateISO: newDateISO });
+          }} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
     </Modal>
@@ -517,6 +538,11 @@ export default function App() {
   const [showDone, setShowDone] = useState(false);
   const [noteModal, setNoteModal] = useState(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
+  const [showSubsMain, setShowSubsMain] = useState(true);
+  const [editingSubId, setEditingSubId] = useState(null);
+  const [editingSubVal, setEditingSubVal] = useState("");
+  const [editingTagIdx, setEditingTagIdx] = useState(null);
+  const [editingTagVal, setEditingTagVal] = useState("");
   const [tags, setTags] = useState(loadTags);
   const [activeTags, setActiveTags] = useState(() => { try { const r = localStorage.getItem("task-timer-active-tags"); if (r) return JSON.parse(r); } catch (e) {} return []; });
   const [newTagName, setNewTagName] = useState("");
@@ -770,10 +796,13 @@ export default function App() {
   const addSubtask = (taskId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
   const toggleSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) })));
   const delSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) })));
+  const renameSubtask = (taskId, stId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, name: name.trim() } : st) } : t) }))); };
+  const moveSubtask = (taskId, stId, dir) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const subs = [...(t.subtasks || [])]; const i = subs.findIndex((s) => s.id === stId); if ((dir === -1 && i === 0) || (dir === 1 && i === subs.length - 1)) return t; [subs[i], subs[i + dir]] = [subs[i + dir], subs[i]]; return { ...t, subtasks: subs }; }) })));
+  const renameTag = (oldName, newName) => { if (!newName.trim() || newName.trim() === oldName) return; updateTags((p) => p.map((t) => t === oldName ? newName.trim() : t)); setActiveTags((p) => { const next = p.map((t) => t === oldName ? newName.trim() : t); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
   const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; updateTags((p) => [...p, name.trim()]); };
   const delTag = (name) => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
   const toggleActiveTag = (name) => { setActiveTags((p) => { const next = p.includes(name) ? p.filter((t) => t !== name) : [...p, name]; try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
-  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [] }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
+  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [], endedAt: changes.endedAt || old.endedAt, date: changes.date || old.date, dateISO: changes.dateISO || old.dateISO }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -880,7 +909,19 @@ export default function App() {
               <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} Mientras tanto...</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {tags.map((tag) => (<button key={tag} onClick={() => toggleActiveTag(tag)} style={{ padding: "6px 14px", borderRadius: 20, border: activeTags.includes(tag) ? "none" : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}22` : "transparent", color: activeTags.includes(tag) ? c.color : theme.textSec, fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>{tag}</button>))}
+                  {tags.map((tag, tgi) => (
+                    editingTagIdx === tgi ? (
+                      <div key={tag} style={{ display: "flex", gap: 4 }}>
+                        <input autoFocus value={editingTagVal} onChange={(e) => setEditingTagVal(e.target.value)} onBlur={() => { renameTag(tag, editingTagVal); setEditingTagIdx(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameTag(tag, editingTagVal); setEditingTagIdx(null); } if (e.key === "Escape") setEditingTagIdx(null); }} style={{ padding: "5px 10px", borderRadius: 16, border: `1px solid ${c.color}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", width: 120 }} />
+                      </div>
+                    ) : (
+                      <div key={tag} style={{ display: "flex", alignItems: "center", gap: 0, padding: "4px 4px 4px 12px", borderRadius: 20, border: activeTags.includes(tag) ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}15` : "transparent" }}>
+                        <span onClick={() => toggleActiveTag(tag)} style={{ fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, color: activeTags.includes(tag) ? c.color : theme.textSec, cursor: "pointer" }}>{tag}</span>
+                        <button onClick={() => { setEditingTagIdx(tgi); setEditingTagVal(tag); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.edit}</button>
+                        <button onClick={() => delTag(tag)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>
+                      </div>
+                    )
+                  ))}
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                   <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
@@ -888,7 +929,30 @@ export default function App() {
                 </div>
               </div>
             )}
-            {!isActive && t.sessions.length > 0 && (() => { const ls = t.sessions[t.sessions.length - 1]; return (ls.tags && ls.tags.length > 0) ? (<div style={{ marginTop: 16, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>{ls.tags.map((tag) => (<span key={tag} style={{ padding: "3px 10px", borderRadius: 12, backgroundColor: dk ? "#1c1c1c" : "#eee", fontSize: 11, color: theme.textSec }}>{tag}</span>))}</div>) : null; })()}
+            {!isActive && (
+              <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
+                <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} Etiquetas</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {tags.map((tag, tgi) => (
+                    editingTagIdx === tgi ? (
+                      <div key={tag} style={{ display: "flex", gap: 4 }}>
+                        <input autoFocus value={editingTagVal} onChange={(e) => setEditingTagVal(e.target.value)} onBlur={() => { renameTag(tag, editingTagVal); setEditingTagIdx(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameTag(tag, editingTagVal); setEditingTagIdx(null); } if (e.key === "Escape") setEditingTagIdx(null); }} style={{ padding: "5px 10px", borderRadius: 16, border: `1px solid ${c.color}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", width: 120 }} />
+                      </div>
+                    ) : (
+                      <div key={tag} style={{ display: "flex", alignItems: "center", gap: 0, padding: "4px 4px 4px 12px", borderRadius: 20, border: activeTags.includes(tag) ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}15` : "transparent" }}>
+                        <span onClick={() => toggleActiveTag(tag)} style={{ fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, color: activeTags.includes(tag) ? c.color : theme.textSec, cursor: "pointer" }}>{tag}</span>
+                        <button onClick={() => { setEditingTagIdx(tgi); setEditingTagVal(tag); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.edit}</button>
+                        <button onClick={() => delTag(tag)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>
+                      </div>
+                    )
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                  <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
+                  <button onClick={() => { if (newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} style={{ padding: "0 10px", borderRadius: 8, border: "none", backgroundColor: c.color, color: "#fff", fontSize: 12, fontWeight: 600 }}>+</button>
+                </div>
+              </div>
+            )}
 
             {/* Stats */}
             <div style={{ marginTop: 28, display: "flex", gap: 32, color: theme.textSec, fontSize: 14 }}>
@@ -897,14 +961,22 @@ export default function App() {
             </div>
 
             {/* Subtasks */}
-            {((t.subtasks || []).length > 0 || isActive) && (
+            {((t.subtasks || []).length > 0 || !t.completed) && (
               <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})</div>
-                {(t.subtasks || []).map((st) => (
-                  <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${theme.border}` }}>
+                {(t.subtasks || []).map((st, sti) => (
+                  <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: `1px solid ${theme.border}` }}>
                     <button onClick={() => toggleSubtask(timerView, st.id)} style={{ width: 22, height: 22, borderRadius: 6, border: st.done ? "none" : `2px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
-                    <span style={{ fontSize: 14, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text, flex: 1 }}>{st.name}</span>
-                    <button onClick={() => delSubtask(timerView, st.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
+                    {editingSubId === st.id ? (
+                      <input autoFocus value={editingSubVal} onChange={(e) => setEditingSubVal(e.target.value)} onBlur={() => { renameSubtask(timerView, st.id, editingSubVal); setEditingSubId(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameSubtask(timerView, st.id, editingSubVal); setEditingSubId(null); } if (e.key === "Escape") setEditingSubId(null); }} style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+                    ) : (
+                      <span onClick={() => { setEditingSubId(st.id); setEditingSubVal(st.name); }} style={{ fontSize: 14, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text, flex: 1, cursor: "pointer" }}>{st.name}</span>
+                    )}
+                    <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                      <button onClick={() => moveSubtask(timerView, st.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: sti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
+                      <button onClick={() => moveSubtask(timerView, st.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: sti === (t.subtasks || []).length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
+                      <button onClick={() => delSubtask(timerView, st.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
+                    </div>
                   </div>
                 ))}
                 <SubtaskInput taskId={timerView} onAdd={addSubtask} theme={theme} />
@@ -1058,8 +1130,12 @@ export default function App() {
                         {t.goalDaily > 0 && (<div style={{ marginTop: 8, height: 4, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${goalPct}%`, backgroundColor: goalPct >= 100 ? "#10b981" : cat.color, borderRadius: 2 }} /></div>)}
                         {/* Inline subtasks */}
                         {(t.subtasks || []).length > 0 && (
-                          <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${theme.border}` }} onClick={(e) => e.stopPropagation()}>
-                            {(t.subtasks || []).map((st) => (
+                          <div style={{ marginTop: 8, paddingTop: 4, borderTop: `1px solid ${theme.border}` }} onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => setShowSubsMain((p) => !p)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", padding: "2px 0", marginBottom: 2 }}>
+                              <div style={{ transform: showSubsMain ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>
+                              Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})
+                            </button>
+                            {showSubsMain && (t.subtasks || []).map((st) => (
                               <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }}>
                                 <button onClick={() => toggleSubtask(t.id, st.id)} style={{ width: 18, height: 18, borderRadius: 5, border: st.done ? "none" : `1.5px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
                                 <span style={{ fontSize: 13, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text }}>{st.name}</span>
