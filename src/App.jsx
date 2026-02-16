@@ -12,8 +12,6 @@ import {
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 
 // ─── Helpers ───────────────────────────────────────────
-const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
 const formatTime = (s) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
@@ -44,6 +42,12 @@ const isThisWeek = (s) => {
   return parseSessionDate(s) >= mon && parseSessionDate(s) <= now;
 };
 const isWithinDays = (s, d) => (new Date() - parseSessionDate(s)) / 864e5 <= d;
+
+// Calculate elapsed seconds from startedAt
+const calcElapsed = (startedAt) => {
+  if (!startedAt) return 0;
+  return Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+};
 
 // ─── Storage ───────────────────────────────────────────
 const THEME_KEY = "task-timer-theme", LOCAL_KEY = "task-timer-data", TAGS_KEY = "task-timer-tags";
@@ -88,68 +92,67 @@ const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4
 
 const defaultCategories = [
   { id: "cat-1", name: "Contenido", color: "#6366f1", tasks: [
-    { id: "t-1", name: "Creación de contenido RRSS", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
-    { id: "t-2", name: "Edición de vídeos", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
+    { id: "t-1", name: "Creación de contenido RRSS", totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
+    { id: "t-2", name: "Edición de vídeos", totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
   ]},
   { id: "cat-2", name: "Negocio", color: "#10b981", tasks: [
-    { id: "t-3", name: "Análisis competencia", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
-    { id: "t-4", name: "Estrategia de ventas", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
+    { id: "t-3", name: "Análisis competencia", totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
+    { id: "t-4", name: "Estrategia de ventas", totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
   ]},
 ];
 
-const ensureTask = (t) => ({ subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, ...t });
+const ensureTask = (t) => {
+  const { currentSeconds, ...rest } = t; // strip currentSeconds from old data
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, ...rest };
+};
+
+// ─── Device ID (unique per browser tab) ────────────────
+const DEVICE_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // ─── Cloud Sync ────────────────────────────────────────
 function useCloudSync(user) {
-  const [cloudData, setCloudData] = useState(null);
-  const [cloudTags, setCloudTags] = useState(null);
-  const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [remoteChange, setRemoteChange] = useState(0); // increments on external changes
+  const remoteCallbackRef = useRef(null);
   const unsubRef = useRef(null);
-  const lastSaveTime = useRef(null);
+  const ignoreNextRef = useRef(false);
 
   useEffect(() => {
-    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); setCloudTags(null); setCloudLoaded(false); return; }
+    if (!user) { if (unsubRef.current) unsubRef.current(); return; }
     const docRef = doc(db, "users", user.uid);
-    let firstLoad = true;
+    let isFirst = true;
     unsubRef.current = onSnapshot(docRef, (snap) => {
+      if (isFirst) { isFirst = false; return; } // skip initial load (we handle it separately)
+      if (ignoreNextRef.current) { ignoreNextRef.current = false; return; }
       if (snap.exists()) {
         const data = snap.data();
-        setCloudData(data.categories || []);
-        setCloudTags(data.tags || null);
-        // After first load, check if this is from another device
-        if (!firstLoad && lastSaveTime.current) {
-          const cloudTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
-          const diff = Math.abs(cloudTime - lastSaveTime.current);
-          // If cloud update is >3s different from our last save, it's from another device
-          if (diff > 3000) {
-            setRemoteChange((p) => p + 1);
-          }
-        }
-      } else {
-        setCloudData([]);
-        setCloudTags(null);
+        if (data._device === DEVICE_ID) return; // ignore own writes
+        if (remoteCallbackRef.current) remoteCallbackRef.current(data);
       }
-      setCloudLoaded(true);
-      firstLoad = false;
-    }, (err) => console.warn("Firestore error:", err));
+    }, (err) => console.warn("Firestore:", err));
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
 
-  const saveToCloud = useCallback(async (cats, tags) => {
+  const saveToCloud = useCallback(async (cats, tgs) => {
     if (!user) return;
     setSyncing(true);
+    ignoreNextRef.current = true;
     try {
-      const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ({ ...ensureTask(t), currentSeconds: 0 })) }));
-      const now = new Date().toISOString();
-      lastSaveTime.current = new Date(now).getTime();
-      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tags || [], updatedAt: now });
-    } catch (e) { console.warn("Save error:", e); }
+      const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
+      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tgs || [], updatedAt: new Date().toISOString(), _device: DEVICE_ID });
+    } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
   }, [user]);
 
-  return { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing, remoteChange };
+  const loadFromCloud = useCallback(async () => {
+    if (!user) return null;
+    try {
+      const { getDoc } = await import("firebase/firestore");
+      const snap = await getDoc(doc(db, "users", user.uid));
+      return snap.exists() ? snap.data() : null;
+    } catch (e) { return null; }
+  }, [user]);
+
+  return { saveToCloud, loadFromCloud, syncing, remoteCallbackRef };
 }
 
 // ─── Profile Menu ──────────────────────────────────────
@@ -188,7 +191,7 @@ function ProfileMenu({ user, onLogin, onLogout, syncing, theme, dk }) {
   );
 }
 
-// ─── Confirm Modal ─────────────────────────────────────
+// ─── Modals ────────────────────────────────────────────
 function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel, theme, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s" }} onClick={onCancel}>
@@ -207,12 +210,10 @@ function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel
   );
 }
 
-// ─── Edit Modal ────────────────────────────────────────
 function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange }) {
   const [val, setVal] = useState(value || "");
   const [col, setCol] = useState(color || "");
   const [goal, setGoal] = useState(goalDaily ? Math.round(goalDaily / 60) : 0);
-
   return (
     <Modal title={title} onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -221,9 +222,7 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
           <div>
             <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 8 }}>Color</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {CAT_COLORS.map((c) => (
-                <button key={c} onClick={() => setCol(c)} style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: c, border: col === c ? "3px solid " + theme.text : "2px solid transparent", cursor: "pointer", transition: "border .15s" }} />
-              ))}
+              {CAT_COLORS.map((c) => <button key={c} onClick={() => setCol(c)} style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: c, border: col === c ? "3px solid " + theme.text : "2px solid transparent", cursor: "pointer" }} />)}
             </div>
           </div>
         )}
@@ -243,20 +242,35 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
   );
 }
 
+function NoteModal({ taskId, sessIdx, note, onSave, onCancel, theme }) {
+  const [val, setVal] = useState(note || "");
+  return (
+    <Modal title="Nota de sesión" onCancel={onCancel} theme={theme}>
+      <textarea autoFocus value={val} onChange={(e) => setVal(e.target.value)} placeholder="¿Qué hiciste en esta sesión?" rows={3} style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+        <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
+        <button onClick={() => onSave(taskId, sessIdx, val)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+      </div>
+    </Modal>
+  );
+}
+
+function SubtaskInput({ taskId, onAdd, theme }) {
+  const [val, setVal] = useState("");
+  return (
+    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+      <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && val.trim()) { onAdd(taskId, val); setVal(""); } }} placeholder="Nueva subtarea..." style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+      <button onClick={() => { if (val.trim()) { onAdd(taskId, val); setVal(""); } }} style={{ padding: "0 12px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600 }}>+</button>
+    </div>
+  );
+}
+
 // ─── Stats View ────────────────────────────────────────
 function StatsView({ categories, theme, dk, onClose }) {
   const [period, setPeriod] = useState("week");
   const [filter, setFilter] = useState("all");
   const periods = [{ key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "14days", label: "14 días" }, { key: "month", label: "Mes" }, { key: "all", label: "Total" }];
-
-  const filterS = (s) => {
-    if (period === "today") return isToday(s);
-    if (period === "week") return isThisWeek(s);
-    if (period === "14days") return isWithinDays(s, 14);
-    if (period === "month") return isWithinDays(s, 30);
-    return true;
-  };
-
+  const filterS = (s) => { if (period === "today") return isToday(s); if (period === "week") return isThisWeek(s); if (period === "14days") return isWithinDays(s, 14); if (period === "month") return isWithinDays(s, 30); return true; };
   const allTasks = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const fTasks = filter === "all" ? allTasks : allTasks.filter((t) => t.catId === filter);
   const tStats = fTasks.map((t) => { const fs = t.sessions.filter(filterS); return { ...t, fSess: fs, pTime: fs.reduce((a, x) => a + x.duration, 0) }; }).filter((t) => t.pTime > 0 || t.sessions.length > 0).sort((a, b) => b.pTime - a.pTime);
@@ -264,65 +278,18 @@ function StatsView({ categories, theme, dk, onClose }) {
   const catStats = categories.map((c) => ({ ...c, pTime: allTasks.filter((t) => t.catId === c.id).reduce((a, t) => a + t.sessions.filter(filterS).reduce((s, x) => s + x.duration, 0), 0) })).filter((c) => c.pTime > 0).sort((a, b) => b.pTime - a.pTime);
   const maxT = Math.max(...tStats.map((t) => t.pTime), 1);
   const maxC = Math.max(...catStats.map((c) => c.pTime), 1);
-
-  // Daily data
   const days = period === "today" ? 1 : period === "week" ? 7 : period === "14days" ? 14 : 30;
   const now = new Date();
   const daily = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now); d.setDate(d.getDate() - i);
-    const ds = getDateStr(d);
-    let tot = 0;
-    fTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) tot += s.duration; }));
-    daily.push({ ds, label: d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }), tot });
-  }
+  for (let i = days - 1; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate() - i); const ds = getDateStr(d); let tot = 0; fTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) tot += s.duration; })); daily.push({ ds, label: d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }), tot }); }
   const maxD = Math.max(...daily.map((d) => d.tot), 1);
-
-  // Streak
-  const getStreak = () => {
-    let streak = 0;
-    const d = new Date();
-    for (let i = 0; i < 365; i++) {
-      const ds = getDateStr(d);
-      let dayTotal = 0;
-      allTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dayTotal += s.duration; }));
-      if (dayTotal > 0) streak++;
-      else if (i > 0) break;
-      d.setDate(d.getDate() - 1);
-    }
-    return streak;
-  };
-
-  // Average
+  const getStreak = () => { let streak = 0; const d = new Date(); for (let i = 0; i < 365; i++) { const ds = getDateStr(d); let dt = 0; allTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dt += s.duration; })); if (dt > 0) streak++; else if (i > 0) break; d.setDate(d.getDate() - 1); } return streak; };
   const daysWithData = daily.filter((d) => d.tot > 0).length;
   const avgDaily = daysWithData > 0 ? Math.round(totalTime / daysWithData) : 0;
-
-  // Heat map (last 12 weeks)
-  const heatData = [];
-  for (let i = 83; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    const ds = getDateStr(d);
-    let tot = 0;
-    allTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) tot += s.duration; }));
-    heatData.push({ ds, tot, day: d.getDay(), label: d.toLocaleDateString("es-ES", { day: "numeric", month: "short" }) });
-  }
+  const heatData = []; for (let i = 83; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const ds = getDateStr(d); let tot = 0; allTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) tot += s.duration; })); heatData.push({ ds, tot, day: d.getDay(), label: d.toLocaleDateString("es-ES", { day: "numeric", month: "short" }) }); }
   const maxHeat = Math.max(...heatData.map((d) => d.tot), 1);
-  const heatColor = (tot) => {
-    if (tot === 0) return dk ? "#1a1a1a" : "#eee";
-    const intensity = Math.min(tot / maxHeat, 1);
-    if (intensity < 0.25) return dk ? "#0e4429" : "#9be9a8";
-    if (intensity < 0.5) return dk ? "#006d32" : "#40c463";
-    if (intensity < 0.75) return dk ? "#26a641" : "#30a14e";
-    return dk ? "#39d353" : "#216e39";
-  };
-
-  // Group heat map into weeks
-  const weeks = [];
-  let week = [];
-  heatData.forEach((d, i) => {
-    week.push(d);
-    if (d.day === 6 || i === heatData.length - 1) { weeks.push(week); week = []; }
-  });
+  const heatColor = (tot) => { if (tot === 0) return dk ? "#1a1a1a" : "#eee"; const int = Math.min(tot / maxHeat, 1); if (int < 0.25) return dk ? "#0e4429" : "#9be9a8"; if (int < 0.5) return dk ? "#006d32" : "#40c463"; if (int < 0.75) return dk ? "#26a641" : "#30a14e"; return dk ? "#39d353" : "#216e39"; };
+  const weeks = []; let week = []; heatData.forEach((d, i) => { week.push(d); if (d.day === 6 || i === heatData.length - 1) { weeks.push(week); week = []; } });
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
@@ -331,13 +298,8 @@ function StatsView({ categories, theme, dk, onClose }) {
           <button onClick={onClose} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Estadísticas</h1>
         </div>
-
-        {/* Quick stats */}
         <div style={{ display: "flex", gap: 12, padding: "16px 0", overflowX: "auto" }}>
-          {[{ label: "Racha", val: `${getStreak()}d`, icon: I.fire, color: "#f59e0b" },
-            { label: "Media diaria", val: fmtShort(avgDaily), icon: I.clock, color: "#6366f1" },
-            { label: "Días activos", val: `${daysWithData}`, icon: I.chart, color: "#10b981" },
-          ].map((s, i) => (
+          {[{ label: "Racha", val: `${getStreak()}d`, icon: I.fire, color: "#f59e0b" }, { label: "Media diaria", val: fmtShort(avgDaily), icon: I.clock, color: "#6366f1" }, { label: "Días activos", val: `${daysWithData}`, icon: I.chart, color: "#10b981" }].map((s, i) => (
             <div key={i} style={{ flex: "0 0 auto", padding: "14px 18px", borderRadius: 14, backgroundColor: theme.card, border: `1px solid ${theme.border}`, minWidth: 110, textAlign: "center" }}>
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 6, color: s.color }}>{s.icon}</div>
               <div style={{ fontSize: 20, fontWeight: 700 }}>{s.val}</div>
@@ -345,99 +307,32 @@ function StatsView({ categories, theme, dk, onClose }) {
             </div>
           ))}
         </div>
-
-        {/* Heat map */}
         <div style={{ padding: "12px 0 16px", borderBottom: `1px solid ${theme.border}` }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Últimas 12 semanas</div>
-          <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>
-            {weeks.map((w, wi) => (
-              <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {w.map((d, di) => (
-                  <div key={di} title={`${d.label}: ${fmtShort(d.tot)}`} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatColor(d.tot), transition: "background .2s" }} />
-                ))}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginTop: 8, fontSize: 11, color: theme.textSec }}>
-            <span>Menos</span>
-            {[0, 0.25, 0.5, 0.75, 1].map((v, i) => <div key={i} style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: heatColor(v * maxHeat || (i === 0 ? 0 : 1)) }} />)}
-            <span>Más</span>
-          </div>
+          <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>{weeks.map((w, wi) => (<div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>{w.map((d, di) => (<div key={di} title={`${d.label}: ${fmtShort(d.tot)}`} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatColor(d.tot) }} />))}</div>))}</div>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginTop: 8, fontSize: 11, color: theme.textSec }}><span>Menos</span>{[0, 0.25, 0.5, 0.75, 1].map((v, i) => <div key={i} style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: heatColor(v * maxHeat || (i === 0 ? 0 : 1)) }} />)}<span>Más</span></div>
         </div>
-
-        {/* Period pills */}
-        <div style={{ display: "flex", gap: 6, padding: "16px 0 8px", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          {periods.map((p) => (
-            <button key={p.key} onClick={() => setPeriod(p.key)} style={{ padding: "8px 14px", borderRadius: 20, border: period === p.key ? "none" : `1px solid ${theme.border}`, backgroundColor: period === p.key ? theme.accent : "transparent", color: period === p.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 14, fontWeight: period === p.key ? 600 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{p.label}</button>
-          ))}
-        </div>
-
-        {/* Category filter */}
-        <div style={{ display: "flex", gap: 6, padding: "8px 0 16px", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ display: "flex", gap: 6, padding: "16px 0 8px", overflowX: "auto" }}>{periods.map((p) => (<button key={p.key} onClick={() => setPeriod(p.key)} style={{ padding: "8px 14px", borderRadius: 20, border: period === p.key ? "none" : `1px solid ${theme.border}`, backgroundColor: period === p.key ? theme.accent : "transparent", color: period === p.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 14, fontWeight: period === p.key ? 600 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{p.label}</button>))}</div>
+        <div style={{ display: "flex", gap: 6, padding: "8px 0 16px", overflowX: "auto" }}>
           <button onClick={() => setFilter("all")} style={{ padding: "6px 12px", borderRadius: 16, border: filter === "all" ? "none" : `1px solid ${theme.border}`, backgroundColor: filter === "all" ? (dk ? "#333" : "#ddd") : "transparent", color: filter === "all" ? theme.text : theme.textSec, fontSize: 13, cursor: "pointer", flexShrink: 0 }}>Todas</button>
-          {categories.map((c) => (
-            <button key={c.id} onClick={() => setFilter(c.id)} style={{ padding: "6px 12px", borderRadius: 16, border: filter === c.id ? "none" : `1px solid ${theme.border}`, backgroundColor: filter === c.id ? `${c.color}22` : "transparent", color: filter === c.id ? c.color : theme.textSec, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, whiteSpace: "nowrap" }}><div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c.color }} />{c.name}</button>
-          ))}
+          {categories.map((c) => (<button key={c.id} onClick={() => setFilter(c.id)} style={{ padding: "6px 12px", borderRadius: 16, border: filter === c.id ? "none" : `1px solid ${theme.border}`, backgroundColor: filter === c.id ? `${c.color}22` : "transparent", color: filter === c.id ? c.color : theme.textSec, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0, whiteSpace: "nowrap" }}><div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c.color }} />{c.name}</button>))}
         </div>
-
-        {/* Total */}
         <div style={{ padding: "12px 0 16px", textAlign: "center", borderBottom: `1px solid ${theme.border}` }}>
           <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: -1 }}>{fmtLong(totalTime)}</div>
           <div style={{ fontSize: 14, color: theme.textSec, marginTop: 4 }}>Tiempo total · {periods.find((p) => p.key === period)?.label}</div>
         </div>
-
-        {/* Daily chart */}
-        {daily.length > 1 && (
-          <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Actividad diaria</div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: daily.length > 14 ? 2 : 3, height: 100 }}>
-              {daily.map((d, i) => (
-                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <div style={{ fontSize: 9, color: theme.textSec, opacity: d.tot > 0 ? 1 : 0 }}>{d.tot > 0 ? fmtShort(d.tot) : ""}</div>
-                  <div style={{ width: "100%", height: Math.max(3, (d.tot / maxD) * 80), backgroundColor: d.tot > 0 ? (filter !== "all" ? categories.find((c) => c.id === filter)?.color || theme.accent : theme.accent) : (dk ? "#1c1c1c" : "#eee"), borderRadius: 3, opacity: d.tot > 0 ? 0.8 : 0.3, transition: "height .3s" }} />
-                  {daily.length <= 7 && <div style={{ fontSize: 10, color: theme.textSec, whiteSpace: "nowrap", opacity: 0.7 }}>{d.label.split(" ")[0]}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* By category */}
-        {filter === "all" && catStats.length > 0 && (
-          <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por categoría</div>
-            {catStats.map((c) => (
-              <div key={c.id} style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c.color }} /><span style={{ fontSize: 15, fontWeight: 500 }}>{c.name}</span></div>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: c.color }}>{fmtShort(c.pTime)}</span>
-                </div>
-                <div style={{ height: 6, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(c.pTime / maxC) * 100}%`, backgroundColor: c.color, borderRadius: 3, transition: "width .3s" }} /></div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* By task */}
+        {daily.length > 1 && (<div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Actividad diaria</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: daily.length > 14 ? 2 : 3, height: 100 }}>{daily.map((d, i) => (<div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}><div style={{ fontSize: 9, color: theme.textSec, opacity: d.tot > 0 ? 1 : 0 }}>{d.tot > 0 ? fmtShort(d.tot) : ""}</div><div style={{ width: "100%", height: Math.max(3, (d.tot / maxD) * 80), backgroundColor: d.tot > 0 ? (filter !== "all" ? categories.find((c) => c.id === filter)?.color || theme.accent : theme.accent) : (dk ? "#1c1c1c" : "#eee"), borderRadius: 3, opacity: d.tot > 0 ? 0.8 : 0.3 }} />{daily.length <= 7 && <div style={{ fontSize: 10, color: theme.textSec, whiteSpace: "nowrap", opacity: 0.7 }}>{d.label.split(" ")[0]}</div>}</div>))}</div>
+        </div>)}
+        {filter === "all" && catStats.length > 0 && (<div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por categoría</div>
+          {catStats.map((c) => (<div key={c.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c.color }} /><span style={{ fontSize: 15, fontWeight: 500 }}>{c.name}</span></div><span style={{ fontSize: 14, fontWeight: 600, color: c.color }}>{fmtShort(c.pTime)}</span></div><div style={{ height: 6, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(c.pTime / maxC) * 100}%`, backgroundColor: c.color, borderRadius: 3 }} /></div></div>))}
+        </div>)}
         <div style={{ padding: "20px 0 100px" }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por tarea</div>
           {tStats.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec, fontSize: 14 }}>Sin datos</div>}
-          {tStats.map((t) => (
-            <div key={t.id} style={{ marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-                  <div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.
-                    {t.completed && <span style={{ color: "#10b981" }}> ✓</span>}
-                    {t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}
-                  </div>
-                </div>
-                <span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span>
-              </div>
-              <div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7, transition: "width .3s" }} /></div>
-            </div>
-          ))}
+          {tStats.map((t) => (<div key={t.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div><div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}><div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.{t.completed && <span style={{ color: "#10b981" }}> ✓</span>}{t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}</div></div><span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span></div><div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7 }} /></div></div>))}
         </div>
       </div>
     </div>
@@ -451,19 +346,11 @@ export default function App() {
   const [dk, setDk] = useState(loadTheme);
   const [categories, setCat] = useState(() => {
     const l = loadLocal();
-    if (!l) return defaultCategories;
-    return l.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
-      const task = ensureTask(t);
-      if (task.isRunning && task.startedAt) {
-        const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
-        if (elapsed > 0 && elapsed < 86400) { task.currentSeconds = elapsed; }
-        else { task.isRunning = false; task.startedAt = null; task.currentSeconds = 0; }
-      }
-      return task;
-    }) }));
+    return l ? l.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) })) : defaultCategories;
   });
   const [expanded, setExpanded] = useState(() => new Set(categories.map((c) => c.id)));
-  const [active, setActive] = useState(null);
+  const [activeId, setActiveId] = useState(null); // ID of running task
+  const [elapsed, setElapsed] = useState(0); // display-only seconds counter
   const [showNewCat, setShowNewCat] = useState(false);
   const [showNewTask, setShowNewTask] = useState(null);
   const [newCatName, setNewCatName] = useState("");
@@ -482,10 +369,15 @@ export default function App() {
   const saveRef = useRef(null);
   const initDone = useRef(false);
   const fileRef = useRef(null);
+  const catsRef = useRef(categories); // always-current ref for callbacks
+  const tagsRef = useRef(tags);
 
-  const { cloudData, cloudTags, cloudLoaded, saveToCloud, syncing, remoteChange } = useCloudSync(user);
+  catsRef.current = categories;
+  tagsRef.current = tags;
 
-  // Auth
+  const { saveToCloud, loadFromCloud, syncing, remoteCallbackRef } = useCloudSync(user);
+
+  // ─── Auth ──────────────────────────────────────────
   useEffect(() => {
     setPersistence(auth, browserLocalPersistence).then(() => {
       const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setAuthLoading(false); });
@@ -493,86 +385,105 @@ export default function App() {
       return unsub;
     }).catch(() => setAuthLoading(false));
   }, []);
-
   const handleLogin = async () => {
     try { await setPersistence(auth, browserLocalPersistence); await signInWithPopup(auth, googleProvider); }
     catch (err) { if (err.code?.includes("popup")) { try { await signInWithRedirect(auth, googleProvider); } catch (e) {} } }
   };
-  const handleLogout = async () => { if (active) stopTask(active); await signOut(auth); initDone.current = false; };
+  const handleLogout = async () => { if (activeId) doStop(activeId); await signOut(auth); initDone.current = false; };
 
-  // Cloud sync - load once on login
+  // ─── Cloud: initial load ───────────────────────────
   useEffect(() => {
-    if (!user || !cloudLoaded || initDone.current) return;
-    initDone.current = true;
-
-    // Check if local has a running timer
-    const hasRunningLocal = categories.some((c) => c.tasks.some((t) => t.isRunning && t.startedAt));
-
-    if (hasRunningLocal) {
-      // Local has active timer, push to cloud instead of overwriting
-      saveToCloud(categories, tags);
-      return;
-    }
-
-    if (cloudData && cloudData.length > 0) {
-      let resumeId = null;
-      const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
-        const task = ensureTask(t);
-        if (task.isRunning && task.startedAt) {
-          const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
-          if (elapsed > 0 && elapsed < 86400) {
-            task.currentSeconds = elapsed;
-            resumeId = task.id;
-          } else {
-            task.isRunning = false; task.startedAt = null; task.currentSeconds = 0;
+    if (!user || initDone.current) return;
+    loadFromCloud().then((data) => {
+      initDone.current = true;
+      if (!data || !data.categories || data.categories.length === 0) {
+        // Nothing in cloud → upload local
+        saveToCloud(catsRef.current, tagsRef.current);
+        return;
+      }
+      // Check if local has a running timer
+      const localRunning = catsRef.current.some((c) => c.tasks.some((t) => t.isRunning && t.startedAt));
+      if (localRunning) {
+        // Keep local, push to cloud
+        saveToCloud(catsRef.current, tagsRef.current);
+        return;
+      }
+      // Load from cloud
+      const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
+      setCat(cats); saveLocal(cats); setExpanded(new Set(cats.map((c) => c.id)));
+      if (data.tags) { setTags(data.tags); saveTags(data.tags); }
+      // Resume any running timer from cloud
+      for (const c of cats) {
+        for (const t of c.tasks) {
+          if (t.isRunning && t.startedAt) {
+            const el = calcElapsed(t.startedAt);
+            if (el > 0 && el < 86400) { setActiveId(t.id); setElapsed(el); }
+            else { setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === t.id ? { ...tk, isRunning: false, startedAt: null } : tk) }))); }
+            return;
           }
         }
-        return task;
-      }) }));
-      setCat(data); saveLocal(data); setExpanded(new Set(data.map((c) => c.id)));
-      if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
-      if (resumeId) setActive(resumeId);
+      }
+    });
+  }, [user]);
+
+  // ─── Cloud: handle remote changes ──────────────────
+  useEffect(() => {
+    remoteCallbackRef.current = (data) => {
+      if (!initDone.current) return;
+      const cats = (data.categories || []).map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
+      setCat(cats); saveLocal(cats);
+      if (data.tags) { setTags(data.tags); saveTags(data.tags); }
+      // Check if remote stopped/started a timer
+      let remoteRunning = null;
+      for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) { remoteRunning = t; break; } } if (remoteRunning) break; }
+      if (remoteRunning) {
+        setActiveId(remoteRunning.id);
+        setElapsed(calcElapsed(remoteRunning.startedAt));
+      } else {
+        if (intRef.current) clearInterval(intRef.current);
+        setActiveId(null);
+        setElapsed(0);
+      }
+    };
+  }, []);
+
+  // ─── Save to cloud on real changes (debounced) ─────
+  const cloudSave = useCallback((cats, tgs) => {
+    if (!user || !initDone.current) return;
+    if (saveRef.current) clearTimeout(saveRef.current);
+    saveRef.current = setTimeout(() => saveToCloud(cats, tgs), 1500);
+  }, [user, saveToCloud]);
+
+  // ─── Elapsed display timer (NOT modifying categories) ──
+  useEffect(() => {
+    if (activeId) {
+      // Find startedAt
+      let startedAt = null;
+      for (const c of catsRef.current) { for (const t of c.tasks) { if (t.id === activeId) { startedAt = t.startedAt; break; } } if (startedAt) break; }
+      if (startedAt) {
+        setElapsed(calcElapsed(startedAt));
+        intRef.current = setInterval(() => setElapsed(calcElapsed(startedAt)), 1000);
+      }
     } else {
-      saveToCloud(categories, tags);
+      setElapsed(0);
     }
-  }, [cloudData, cloudLoaded, user]);
+    return () => clearInterval(intRef.current);
+  }, [activeId]);
 
-  const immediateSave = useRef(false);
-
+  // Resume from localStorage on mount
   useEffect(() => {
-    saveLocal(categories);
-    saveTags(tags);
-    if (user && initDone.current) {
-      if (saveRef.current) clearTimeout(saveRef.current);
-      const delay = immediateSave.current ? 300 : 3000;
-      immediateSave.current = false;
-      saveRef.current = setTimeout(() => saveToCloud(categories, tags), delay);
-    }
-  }, [categories, tags, user, saveToCloud]);
-
-  // Handle remote changes from other devices
-  useEffect(() => {
-    if (remoteChange === 0 || !cloudData || !initDone.current) return;
-    let resumeId = null;
-    const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
-      const task = ensureTask(t);
-      if (task.isRunning && task.startedAt) {
-        const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
-        if (elapsed > 0 && elapsed < 86400) {
-          task.currentSeconds = elapsed;
-          resumeId = task.id;
-        } else {
-          task.isRunning = false; task.startedAt = null; task.currentSeconds = 0;
+    for (const c of categories) {
+      for (const t of c.tasks) {
+        if (t.isRunning && t.startedAt) {
+          const el = calcElapsed(t.startedAt);
+          if (el > 0 && el < 86400) { setActiveId(t.id); setElapsed(el); }
+          return;
         }
       }
-      return task;
-    }) }));
-    setCat(data); saveLocal(data);
-    if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
-    // Update active timer state
-    if (resumeId && !active) { setActive(resumeId); }
-    if (!resumeId && active) { clearInterval(intRef.current); setActive(null); }
-  }, [remoteChange]);
+    }
+  }, []);
+
+  useEffect(() => { const h = (e) => { if (activeId) { e.preventDefault(); e.returnValue = ""; } }; window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h); }, [activeId]);
 
   // Theme
   useEffect(() => { saveTheme(dk); document.body.style.background = dk ? "#0a0a0a" : "#fafafa"; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dk ? "#0a0a0a" : "#fafafa"); }, [dk]);
@@ -580,93 +491,86 @@ export default function App() {
     ? { bg: "#0a0a0a", card: "#141414", border: "#252525", text: "#f5f5f5", textSec: "#737373", accent: "#ffffff", surface: "#1c1c1c" }
     : { bg: "#fafafa", card: "#ffffff", border: "#e5e5e5", text: "#0a0a0a", textSec: "#737373", accent: "#000000", surface: "#f0f0f0" };
 
-  // Timer
-  useEffect(() => {
-    if (active) {
-      intRef.current = setInterval(() => {
-        setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
-          if (t.id === active && t.startedAt) {
-            return { ...t, currentSeconds: Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000) };
-          }
-          return t;
-        }) })));
-      }, 1000);
-    }
-    return () => clearInterval(intRef.current);
-  }, [active]);
-  useEffect(() => { const h = (e) => { if (active) { e.preventDefault(); e.returnValue = ""; } }; window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h); }, [active]);
-
-  // Resume running timer on app load (from localStorage)
-  useEffect(() => {
-    for (const c of categories) {
-      for (const t of c.tasks) {
-        if (t.isRunning && t.startedAt && !active) {
-          setActive(t.id);
-          return;
-        }
-      }
-    }
-  }, []); // only on mount
-
   const toggle = (id) => setExpanded((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const getTask = useCallback((id) => { for (const c of categories) { const t = c.tasks.find((x) => x.id === id); if (t) return { task: t, cat: c }; } return {}; }, [categories]);
 
-  const stopTask = (id) => {
+  // ─── Timer: Start / Stop ───────────────────────────
+  const doStop = (id) => {
     clearInterval(intRef.current);
     const sessionTags = [...activeTags];
-    immediateSave.current = true;
-    setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
-      if (t.id === id && t.startedAt) {
-        const duration = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
-        if (duration > 0) {
-          const now = new Date();
-          return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: sessionTags }], currentSeconds: 0 };
+    setCat((prev) => {
+      const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+        if (t.id === id && t.startedAt) {
+          const duration = calcElapsed(t.startedAt);
+          if (duration > 0) {
+            const now = new Date();
+            return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: sessionTags }] };
+          }
         }
-        return { ...t, isRunning: false, startedAt: null, currentSeconds: 0 };
-      }
-      return t.id === id ? { ...t, isRunning: false, startedAt: null, currentSeconds: 0 } : t;
-    }) })));
-    setActive(null);
+        return t.id === id ? { ...t, isRunning: false, startedAt: null } : t;
+      }) }));
+      saveLocal(next);
+      cloudSave(next, tagsRef.current);
+      return next;
+    });
+    setActiveId(null);
+    setElapsed(0);
     setActiveTags([]);
   };
 
-  const toggleTimer = (id) => {
-    if (active === id) stopTask(id);
-    else { if (active) stopTask(active); immediateSave.current = true; const now = new Date().toISOString(); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, currentSeconds: 0, startedAt: now } : t) }))); setActive(id); setTimerView(id); }
+  const doStart = (id) => {
+    if (activeId) doStop(activeId);
+    const now = new Date().toISOString();
+    setCat((prev) => {
+      const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, startedAt: now } : t) }));
+      saveLocal(next);
+      cloudSave(next, tagsRef.current);
+      return next;
+    });
+    setActiveId(id);
+    setTimerView(id);
   };
 
-  // CRUD
-  const resetTask = (id) => { if (active === id) { clearInterval(intRef.current); setActive(null); } setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, totalSeconds: 0, currentSeconds: 0, isRunning: false, startedAt: null, sessions: [] } : t) }))); setModal(null); };
-  const completeTask = (id) => { if (active === id) stopTask(id); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, isRunning: false, startedAt: null, currentSeconds: 0 } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
-  const uncomplete = (id) => setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: false } : t) })));
-  const delTask = (id) => { if (active === id) { clearInterval(intRef.current); setActive(null); } if (timerView === id) setTimerView(null); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== id) }))); setModal(null); };
-  const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (active === t.id) { clearInterval(intRef.current); setActive(null); } if (timerView === t.id) setTimerView(null); }); setCat((p) => p.filter((x) => x.id !== id)); setModal(null); };
-  const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; setCat((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
-  const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" }; setCat((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
+  const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
 
-  // Edit
-  const editCatSave = (id, name, color) => { if (!name.trim()) return; setCat((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
-  const editTaskSave = (id, name, _c, goalDaily) => { if (!name.trim()) return; setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), goalDaily } : t) }))); setEditModal(null); };
+  // ─── CRUD (all save to local + cloud) ──────────────
+  const update = (fn) => {
+    setCat((prev) => {
+      const next = fn(prev);
+      saveLocal(next);
+      cloudSave(next, tagsRef.current);
+      return next;
+    });
+  };
+  const updateTags = (fn) => {
+    setTags((prev) => {
+      const next = fn(prev);
+      saveTags(next);
+      cloudSave(catsRef.current, next);
+      return next;
+    });
+  };
 
-  // Reorder
-  const moveCat = (id, dir) => { setCat((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; }); };
-  const moveTask = (catId, taskId, dir) => { setCat((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; })); };
-
-  // Subtasks
-  const addSubtask = (taskId, name) => { if (!name.trim()) return; setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
-  const toggleSubtask = (taskId, stId) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) }))); };
-  const delSubtask = (taskId, stId) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) }))); };
-
-  // Tags
-  const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; setTags((p) => [...p, name.trim()]); };
-  const delTag = (name) => { setTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => p.filter((t) => t !== name)); };
+  const resetTask = (id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); } update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, totalSeconds: 0, isRunning: false, startedAt: null, sessions: [] } : t) }))); setModal(null); };
+  const completeTask = (id) => { if (activeId === id) doStop(id); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, isRunning: false, startedAt: null } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
+  const uncomplete = (id) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: false } : t) })));
+  const delTask = (id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === id) setTimerView(null); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== id) }))); setModal(null); };
+  const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (activeId === t.id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === t.id) setTimerView(null); }); update((p) => p.filter((x) => x.id !== id)); setModal(null); };
+  const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
+  const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
+  const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
+  const editTaskSave = (id, name, _c, goalDaily) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), goalDaily } : t) }))); setEditModal(null); };
+  const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
+  const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
+  const addSubtask = (taskId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
+  const toggleSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) })));
+  const delSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) })));
+  const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; updateTags((p) => [...p, name.trim()]); };
+  const delTag = (name) => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => p.filter((t) => t !== name)); };
   const toggleActiveTag = (name) => { setActiveTags((p) => p.includes(name) ? p.filter((t) => t !== name) : [...p, name]); };
+  const saveSessionNote = (taskId, sessIdx, note) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; s[sessIdx] = { ...s[sessIdx], note }; return { ...t, sessions: s }; }) }))); setNoteModal(null); };
+  const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
-  // Session notes
-  const saveSessionNote = (taskId, sessIdx, note) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; s[sessIdx] = { ...s[sessIdx], note }; return { ...t, sessions: s }; }) }))); setNoteModal(null); };
-  const delSession = (taskId, sessIdx) => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
-
-  // Import/Export
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
   const importData = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -674,18 +578,21 @@ export default function App() {
     r.onload = (ev) => { try {
       const d = JSON.parse(ev.target.result);
       if (Array.isArray(d) && d.length > 0) {
-        setModal({ title: "¿Importar datos?", message: `${d.length} categorías, ${d.reduce((s, c) => s + (c.tasks?.length || 0), 0)} tareas. Reemplazará tus datos.`, confirmLabel: "Importar", confirmColor: "#6366f1", onConfirm: () => { if (active) { clearInterval(intRef.current); setActive(null); } const cl = d.map((c) => ({ ...c, tasks: (c.tasks || []).map((t) => ({ ...ensureTask(t), isRunning: false, currentSeconds: 0 })) })); setCat(cl); setExpanded(new Set(cl.map((c) => c.id))); setTimerView(null); setModal(null); } });
+        setModal({ title: "¿Importar datos?", message: `${d.length} categorías, ${d.reduce((s, c) => s + (c.tasks?.length || 0), 0)} tareas. Reemplazará tus datos.`, confirmLabel: "Importar", confirmColor: "#6366f1", onConfirm: () => { if (activeId) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); } const cl = d.map((c) => ({ ...c, tasks: (c.tasks || []).map((t) => ({ ...ensureTask(t), isRunning: false, startedAt: null })) })); update(() => cl); setExpanded(new Set(cl.map((c) => c.id))); setTimerView(null); setModal(null); } });
       } else alert("Formato no válido.");
     } catch (err) { alert("Error: JSON no válido."); } };
     r.readAsText(f); e.target.value = "";
   };
 
+  // ─── Derived state ─────────────────────────────────
   const atd = timerView ? getTask(timerView) : null;
-  const totalToday = categories.reduce((s, c) => s + c.tasks.reduce((a, t) => a + t.totalSeconds + (t.isRunning ? t.currentSeconds : 0), 0), 0);
-
-  // Goal progress for a task today
+  const totalToday = categories.reduce((s, c) => s + c.tasks.reduce((a, t) => {
+    const base = t.totalSeconds + (t.id === activeId ? elapsed : 0);
+    return a + base;
+  }, 0), 0);
   const todayTime = (task) => {
-    return task.sessions.filter(isToday).reduce((s, x) => s + x.duration, 0) + (task.isRunning ? task.currentSeconds : 0);
+    const sessToday = task.sessions.filter(isToday).reduce((s, x) => s + x.duration, 0);
+    return sessToday + (task.id === activeId ? elapsed : 0);
   };
 
   if (authLoading) return (
@@ -702,41 +609,34 @@ export default function App() {
       {/* Timer fullscreen */}
       {timerView && atd?.task && (() => {
         const t = ensureTask(atd.task), c = atd.cat;
+        const isActive = activeId === timerView;
+        const displaySecs = isActive ? elapsed : 0;
         return (
           <div style={{ position: "fixed", inset: 0, backgroundColor: dk ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(20px)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "60px 20px 40px", overflow: "auto", animation: "fadeIn .25s" }}>
             <button onClick={() => setTimerView(null)} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 10 }}>{I.x}</button>
             <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.color, marginBottom: 12, opacity: 0.8 }} />
             <div style={{ fontSize: 13, color: theme.textSec, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>{c.name}</div>
             <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 32, textAlign: "center", padding: "0 20px" }}>{t.name}</div>
-            <div style={{ fontSize: "min(64px, 13vw)", fontWeight: 200, fontVariantNumeric: "tabular-nums", color: active === timerView ? theme.text : theme.textSec, marginBottom: 32, letterSpacing: 3 }}>{formatTime(active === timerView ? t.currentSeconds : 0)}</div>
-            <button onClick={() => toggleTimer(timerView)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", backgroundColor: active === timerView ? (dk ? "#fff" : "#000") : c.color, color: active === timerView ? (dk ? "#000" : "#fff") : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 40px ${active === timerView ? (dk ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)") : c.color + "44"}` }}>
-              {active === timerView ? I.pause : I.play}
+            <div style={{ fontSize: "min(64px, 13vw)", fontWeight: 200, fontVariantNumeric: "tabular-nums", color: isActive ? theme.text : theme.textSec, marginBottom: 32, letterSpacing: 3 }}>{formatTime(displaySecs)}</div>
+            <button onClick={() => toggleTimer(timerView)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", backgroundColor: isActive ? (dk ? "#fff" : "#000") : c.color, color: isActive ? (dk ? "#000" : "#fff") : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 40px ${isActive ? (dk ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)") : c.color + "44"}` }}>
+              {isActive ? I.pause : I.play}
             </button>
 
-            {/* Goal progress */}
+            {/* Goal */}
             {t.goalDaily > 0 && (
               <div style={{ marginTop: 24, width: "80%", maxWidth: 260 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: theme.textSec, marginBottom: 4 }}>
-                  <span>{I.target} Objetivo diario</span>
-                  <span>{fmtShort(todayTime(t))} / {fmtShort(t.goalDaily)}</span>
-                </div>
-                <div style={{ height: 6, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(100, (todayTime(t) / t.goalDaily) * 100)}%`, backgroundColor: todayTime(t) >= t.goalDaily ? "#10b981" : c.color, borderRadius: 3, transition: "width .3s" }} />
-                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: theme.textSec, marginBottom: 4 }}><span>{I.target} Objetivo diario</span><span>{fmtShort(todayTime(t))} / {fmtShort(t.goalDaily)}</span></div>
+                <div style={{ height: 6, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, (todayTime(t) / t.goalDaily) * 100)}%`, backgroundColor: todayTime(t) >= t.goalDaily ? "#10b981" : c.color, borderRadius: 3 }} /></div>
                 {todayTime(t) >= t.goalDaily && <div style={{ fontSize: 12, color: "#10b981", textAlign: "center", marginTop: 4, fontWeight: 600 }}>✓ Objetivo alcanzado</div>}
               </div>
             )}
 
-            {/* Tags - visible when timer is active */}
-            {active === timerView && (
+            {/* Tags */}
+            {isActive && (
               <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} Mientras tanto...</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {tags.map((tag) => (
-                    <button key={tag} onClick={() => toggleActiveTag(tag)} style={{ padding: "6px 14px", borderRadius: 20, border: activeTags.includes(tag) ? "none" : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}22` : "transparent", color: activeTags.includes(tag) ? c.color : theme.textSec, fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>
-                      {tag}
-                    </button>
-                  ))}
+                  {tags.map((tag) => (<button key={tag} onClick={() => toggleActiveTag(tag)} style={{ padding: "6px 14px", borderRadius: 20, border: activeTags.includes(tag) ? "none" : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}22` : "transparent", color: activeTags.includes(tag) ? c.color : theme.textSec, fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>{tag}</button>))}
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                   <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
@@ -744,33 +644,21 @@ export default function App() {
                 </div>
               </div>
             )}
-            {/* Active tags display when not running */}
-            {active !== timerView && t.sessions.length > 0 && (() => {
-              const lastSess = t.sessions[t.sessions.length - 1];
-              return (lastSess.tags && lastSess.tags.length > 0) ? (
-                <div style={{ marginTop: 16, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
-                  {lastSess.tags.map((tag) => (
-                    <span key={tag} style={{ padding: "3px 10px", borderRadius: 12, backgroundColor: dk ? "#1c1c1c" : "#eee", fontSize: 11, color: theme.textSec }}>{tag}</span>
-                  ))}
-                </div>
-              ) : null;
-            })()}
+            {!isActive && t.sessions.length > 0 && (() => { const ls = t.sessions[t.sessions.length - 1]; return (ls.tags && ls.tags.length > 0) ? (<div style={{ marginTop: 16, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>{ls.tags.map((tag) => (<span key={tag} style={{ padding: "3px 10px", borderRadius: 12, backgroundColor: dk ? "#1c1c1c" : "#eee", fontSize: 11, color: theme.textSec }}>{tag}</span>))}</div>) : null; })()}
 
             {/* Stats */}
             <div style={{ marginTop: 28, display: "flex", gap: 32, color: theme.textSec, fontSize: 14 }}>
-              <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 600, color: theme.text, opacity: 0.8 }}>{fmtLong(t.totalSeconds)}</div><div>Total</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 600, color: theme.text, opacity: 0.8 }}>{fmtLong(t.totalSeconds + (isActive ? elapsed : 0))}</div><div>Total</div></div>
               <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 600, color: theme.text, opacity: 0.8 }}>{t.sessions.length}</div><div>Sesiones</div></div>
             </div>
 
             {/* Subtasks */}
-            {((t.subtasks || []).length > 0 || active === timerView) && (
+            {((t.subtasks || []).length > 0 || isActive) && (
               <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})</div>
                 {(t.subtasks || []).map((st) => (
                   <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${theme.border}` }}>
-                    <button onClick={() => toggleSubtask(timerView, st.id)} style={{ width: 22, height: 22, borderRadius: 6, border: st.done ? "none" : `2px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>
-                      {st.done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}
-                    </button>
+                    <button onClick={() => toggleSubtask(timerView, st.id)} style={{ width: 22, height: 22, borderRadius: 6, border: st.done ? "none" : `2px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
                     <span style={{ fontSize: 14, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text, flex: 1 }}>{st.name}</span>
                     <button onClick={() => delSubtask(timerView, st.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
                   </div>
@@ -784,7 +672,6 @@ export default function App() {
               <div style={{ marginTop: 24, maxWidth: 320, width: "90%" }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Sesiones ({t.sessions.length})</div>
                 {(showAllSessions ? t.sessions : t.sessions.slice(-5)).slice().reverse().map((s, i) => {
-                  const displayed = showAllSessions ? t.sessions.length : Math.min(5, t.sessions.length);
                   const si = t.sessions.length - 1 - i;
                   return (
                     <div key={si} style={{ padding: "7px 0", borderBottom: `1px solid ${theme.border}` }}>
@@ -793,7 +680,7 @@ export default function App() {
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span>{s.date ? `${s.date} · ${s.endedAt}` : s.endedAt}</span>
                           <button onClick={() => setNoteModal({ taskId: timerView, sessIdx: si, note: s.note || "" })} style={{ background: "none", border: "none", color: s.note ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 2, opacity: s.note ? 1 : 0.4 }}>{I.note}</button>
-                          <button onClick={() => setModal({ title: "¿Eliminar sesión?", message: `${fmtShort(s.duration)} · ${s.date || ""} ${s.endedAt || ""}. Se restará del tiempo total.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delSession(timerView, si) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
+                          <button onClick={() => setModal({ title: "¿Eliminar sesión?", message: `${fmtShort(s.duration)} · ${s.date || ""} ${s.endedAt || ""}`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delSession(timerView, si) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
                         </div>
                       </div>
                       {s.note && <div style={{ fontSize: 12, color: theme.textSec, marginTop: 3, fontStyle: "italic" }}>{s.note}</div>}
@@ -801,11 +688,7 @@ export default function App() {
                     </div>
                   );
                 })}
-                {t.sessions.length > 5 && (
-                  <button onClick={() => setShowAllSessions(!showAllSessions)} style={{ width: "100%", padding: "8px 0", marginTop: 4, background: "none", border: "none", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>
-                    {showAllSessions ? "Ver menos" : `Ver todas (${t.sessions.length})`}
-                  </button>
-                )}
+                {t.sessions.length > 5 && <button onClick={() => setShowAllSessions(!showAllSessions)} style={{ width: "100%", padding: "8px 0", marginTop: 4, background: "none", border: "none", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>{showAllSessions ? "Ver menos" : `Ver todas (${t.sessions.length})`}</button>}
               </div>
             )}
           </div>
@@ -840,13 +723,13 @@ export default function App() {
         </div>
 
         {/* Active banner */}
-        {active && (() => { const { task: at, cat: ac } = getTask(active); if (!at) return null; return (
-          <div onClick={() => setTimerView(active)} style={{ margin: "14px 0 0", padding: "14px 16px", borderRadius: 14, background: `linear-gradient(135deg, ${ac.color}22, ${ac.color}08)`, border: `1px solid ${ac.color}33`, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+        {activeId && (() => { const { task: at, cat: ac } = getTask(activeId); if (!at) return null; return (
+          <div onClick={() => setTimerView(activeId)} style={{ margin: "14px 0 0", padding: "14px 16px", borderRadius: 14, background: `linear-gradient(135deg, ${ac.color}22, ${ac.color}08)`, border: `1px solid ${ac.color}33`, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
               <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: ac.color, animation: "pulse 1.5s infinite", flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{at.name}</div><div style={{ fontSize: 12, color: theme.textSec }}>{ac.name}</div></div>
             </div>
-            <div style={{ fontSize: 20, fontWeight: 300, fontVariantNumeric: "tabular-nums", color: ac.color, flexShrink: 0, marginLeft: 8 }}>{formatTime(at.currentSeconds)}</div>
+            <div style={{ fontSize: 20, fontWeight: 300, fontVariantNumeric: "tabular-nums", color: ac.color, flexShrink: 0, marginLeft: 8 }}>{formatTime(elapsed)}</div>
           </div>
         ); })()}
 
@@ -869,7 +752,6 @@ export default function App() {
             const cTasks = cat.tasks.filter((t) => t.completed);
             return (
               <div key={cat.id} style={{ marginTop: 18 }}>
-                {/* Category header */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }} onClick={() => toggle(cat.id)}>
                     <div style={{ width: 14, height: 14, borderRadius: 4, backgroundColor: cat.color, opacity: 0.8 }} />
@@ -889,32 +771,27 @@ export default function App() {
                 {expanded.has(cat.id) && (<div>
                   {aTasks.map((task, ti) => {
                     const t = ensureTask(task);
+                    const isActive = activeId === t.id;
                     const tToday = todayTime(t);
                     const goalPct = t.goalDaily > 0 ? Math.min(100, (tToday / t.goalDaily) * 100) : -1;
                     return (
-                      <div key={t.id} onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: active === t.id ? `${cat.color}12` : theme.card, border: `1px solid ${active === t.id ? `${cat.color}33` : theme.border}`, cursor: "pointer" }}>
+                      <div key={t.id} onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: isActive ? `${cat.color}12` : theme.card, border: `1px solid ${isActive ? `${cat.color}33` : theme.border}`, cursor: "pointer" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
                             <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
                             <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                              {I.clock} <span>{fmtLong(t.totalSeconds + (t.isRunning ? t.currentSeconds : 0))}</span>
+                              {I.clock} <span>{fmtLong(t.totalSeconds + (isActive ? elapsed : 0))}</span>
                               {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
                               {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
                               {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-                            {active === t.id && <span style={{ fontSize: 14, fontWeight: 300, fontVariantNumeric: "tabular-nums", color: cat.color, marginRight: 2 }}>{formatTime(t.currentSeconds)}</span>}
-                            <button onClick={(e) => { e.stopPropagation(); toggleTimer(t.id); }} style={{ width: 38, height: 38, borderRadius: "50%", border: "none", backgroundColor: active === t.id ? cat.color : theme.surface, color: active === t.id ? "#fff" : theme.textSec, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{active === t.id ? I.pause : I.play}</button>
+                            {isActive && <span style={{ fontSize: 14, fontWeight: 300, fontVariantNumeric: "tabular-nums", color: cat.color, marginRight: 2 }}>{formatTime(elapsed)}</span>}
+                            <button onClick={(e) => { e.stopPropagation(); toggleTimer(t.id); }} style={{ width: 38, height: 38, borderRadius: "50%", border: "none", backgroundColor: isActive ? cat.color : theme.surface, color: isActive ? "#fff" : theme.textSec, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{isActive ? I.pause : I.play}</button>
                           </div>
                         </div>
-                        {/* Goal bar */}
-                        {t.goalDaily > 0 && (
-                          <div style={{ marginTop: 8, height: 4, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 2, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${goalPct}%`, backgroundColor: goalPct >= 100 ? "#10b981" : cat.color, borderRadius: 2, transition: "width .3s" }} />
-                          </div>
-                        )}
-                        {/* Action row */}
+                        {t.goalDaily > 0 && (<div style={{ marginTop: 8, height: 4, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${goalPct}%`, backgroundColor: goalPct >= 100 ? "#10b981" : cat.color, borderRadius: 2 }} /></div>)}
                         <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
@@ -926,7 +803,6 @@ export default function App() {
                       </div>
                     );
                   })}
-
                   {showNewTask === cat.id ? (
                     <div style={{ display: "flex", gap: 8, marginTop: 5 }}>
                       <input autoFocus value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addTask(cat.id); if (e.key === "Escape") { setShowNewTask(null); setNewTaskName(""); } }} placeholder="Nueva tarea..." style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
@@ -936,23 +812,13 @@ export default function App() {
                   ) : (
                     <button onClick={() => { setShowNewTask(cat.id); setShowNewCat(false); setNewTaskName(""); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", margin: "5px 0", borderRadius: 10, border: `1px dashed ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 14, cursor: "pointer", width: "100%" }}>{I.plus} Añadir tarea</button>
                   )}
-
                   {cTasks.length > 0 && (
                     <div style={{ marginTop: 8 }}>
-                      <button onClick={() => setShowDone(showDone === cat.id ? false : cat.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 0", background: "none", border: "none", color: theme.textSec, fontSize: 14, cursor: "pointer" }}>
-                        <div style={{ transform: showDone === cat.id ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>
-                        Completadas ({cTasks.length})
-                      </button>
+                      <button onClick={() => setShowDone(showDone === cat.id ? false : cat.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 0", background: "none", border: "none", color: theme.textSec, fontSize: 14, cursor: "pointer" }}><div style={{ transform: showDone === cat.id ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>Completadas ({cTasks.length})</button>
                       {showDone === cat.id && cTasks.map((task) => (
                         <div key={task.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", marginBottom: 4, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}`, opacity: 0.6 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 15, fontWeight: 500, textDecoration: "line-through", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</div>
-                            <div style={{ fontSize: 13, color: theme.textSec, marginTop: 2 }}>{fmtLong(task.totalSeconds)} · {task.sessions.length} ses.</div>
-                          </div>
-                          <div style={{ display: "flex", gap: 4 }}>
-                            <button onClick={() => uncomplete(task.id)} title="Reactivar" style={{ background: "none", border: "none", color: "#f59e0b", cursor: "pointer", padding: 6 }}>{I.reset}</button>
-                            <button onClick={() => setModal({ title: "¿Eliminar?", message: `"${task.name}".`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(task.id) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 6, opacity: 0.4 }}>{I.trash}</button>
-                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, textDecoration: "line-through", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</div><div style={{ fontSize: 13, color: theme.textSec, marginTop: 2 }}>{fmtLong(task.totalSeconds)} · {task.sessions.length} ses.</div></div>
+                          <div style={{ display: "flex", gap: 4 }}><button onClick={() => uncomplete(task.id)} title="Reactivar" style={{ background: "none", border: "none", color: "#f59e0b", cursor: "pointer", padding: 6 }}>{I.reset}</button><button onClick={() => setModal({ title: "¿Eliminar?", message: `"${task.name}".`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(task.id) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 6, opacity: 0.4 }}>{I.trash}</button></div>
                         </div>
                       ))}
                     </div>
@@ -961,14 +827,7 @@ export default function App() {
               </div>
             );
           })}
-
-          {categories.length === 0 && (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: theme.textSec }}>
-              <div style={{ fontSize: 42, marginBottom: 12 }}>⏱</div>
-              <div style={{ fontSize: 17, fontWeight: 500, marginBottom: 6 }}>Sin categorías</div>
-              <div style={{ fontSize: 15 }}>Crea tu primera categoría para empezar</div>
-            </div>
-          )}
+          {categories.length === 0 && (<div style={{ textAlign: "center", padding: "60px 20px", color: theme.textSec }}><div style={{ fontSize: 42, marginBottom: 12 }}>⏱</div><div style={{ fontSize: 17, fontWeight: 500, marginBottom: 6 }}>Sin categorías</div><div style={{ fontSize: 15 }}>Crea tu primera categoría para empezar</div></div>)}
         </div>
       </div>
 
@@ -983,29 +842,5 @@ export default function App() {
         button:active { transform:scale(.97) }
       `}</style>
     </div>
-  );
-}
-
-// ─── Small components ──────────────────────────────────
-function SubtaskInput({ taskId, onAdd, theme }) {
-  const [val, setVal] = useState("");
-  return (
-    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-      <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && val.trim()) { onAdd(taskId, val); setVal(""); } }} placeholder="Nueva subtarea..." style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
-      <button onClick={() => { if (val.trim()) { onAdd(taskId, val); setVal(""); } }} style={{ padding: "0 12px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600 }}>+</button>
-    </div>
-  );
-}
-
-function NoteModal({ taskId, sessIdx, note, onSave, onCancel, theme }) {
-  const [val, setVal] = useState(note || "");
-  return (
-    <Modal title="Nota de sesión" onCancel={onCancel} theme={theme}>
-      <textarea autoFocus value={val} onChange={(e) => setVal(e.target.value)} placeholder="¿Qué hiciste en esta sesión?" rows={3} style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-        <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-        <button onClick={() => onSave(taskId, sessIdx, val)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
-      </div>
-    </Modal>
   );
 }
