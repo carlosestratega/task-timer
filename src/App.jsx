@@ -612,15 +612,20 @@ export default function App() {
         const isActive = activeId === timerView;
         const displaySecs = isActive ? elapsed : 0;
         return (
-          <div style={{ position: "fixed", inset: 0, backgroundColor: dk ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(20px)", zIndex: 100, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "60px 20px 40px", overflow: "auto", animation: "fadeIn .25s" }}>
-            <button onClick={() => setTimerView(null)} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 10 }}>{I.x}</button>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.color, marginBottom: 12, opacity: 0.8 }} />
-            <div style={{ fontSize: 13, color: theme.textSec, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>{c.name}</div>
-            <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 32, textAlign: "center", padding: "0 20px" }}>{t.name}</div>
-            <div style={{ fontSize: "min(64px, 13vw)", fontWeight: 200, fontVariantNumeric: "tabular-nums", color: isActive ? theme.text : theme.textSec, marginBottom: 32, letterSpacing: 3 }}>{formatTime(displaySecs)}</div>
-            <button onClick={() => toggleTimer(timerView)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", backgroundColor: isActive ? (dk ? "#fff" : "#000") : c.color, color: isActive ? (dk ? "#000" : "#fff") : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 40px ${isActive ? (dk ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)") : c.color + "44"}` }}>
-              {isActive ? I.pause : I.play}
-            </button>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: dk ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(20px)", zIndex: 100, display: "flex", flexDirection: "column", animation: "fadeIn .25s" }}>
+            <button onClick={() => setTimerView(null)} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 10, zIndex: 2 }}>{I.x}</button>
+            {/* Fixed top */}
+            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 20px 24px" }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.color, marginBottom: 12, opacity: 0.8 }} />
+              <div style={{ fontSize: 13, color: theme.textSec, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>{c.name}</div>
+              <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 24, textAlign: "center", padding: "0 20px" }}>{t.name}</div>
+              <div style={{ fontSize: "min(64px, 13vw)", fontWeight: 200, fontVariantNumeric: "tabular-nums", color: isActive ? theme.text : theme.textSec, marginBottom: 24, letterSpacing: 3 }}>{formatTime(displaySecs)}</div>
+              <button onClick={() => toggleTimer(timerView)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", backgroundColor: isActive ? (dk ? "#fff" : "#000") : c.color, color: isActive ? (dk ? "#000" : "#fff") : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: `0 0 40px ${isActive ? (dk ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)") : c.color + "44"}` }}>
+                {isActive ? I.pause : I.play}
+              </button>
+            </div>
+            {/* Scrollable content */}
+            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px 40px", WebkitOverflowScrolling: "touch" }}>
 
             {/* Goal */}
             {t.goalDaily > 0 && (
@@ -691,6 +696,7 @@ export default function App() {
                 {t.sessions.length > 5 && <button onClick={() => setShowAllSessions(!showAllSessions)} style={{ width: "100%", padding: "8px 0", marginTop: 4, background: "none", border: "none", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>{showAllSessions ? "Ver menos" : `Ver todas (${t.sessions.length})`}</button>}
               </div>
             )}
+            </div>{/* end scrollable */}
           </div>
         );
       })()}
