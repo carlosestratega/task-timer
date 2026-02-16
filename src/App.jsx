@@ -9,7 +9,7 @@ import {
   browserLocalPersistence,
   setPersistence,
 } from "firebase/auth";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc, query, orderBy, limit } from "firebase/firestore";
 
 // ─── Helpers ───────────────────────────────────────────
 const formatTime = (s) => {
@@ -114,20 +114,21 @@ function useCloudSync(user) {
   const [syncing, setSyncing] = useState(false);
   const remoteCallbackRef = useRef(null);
   const unsubRef = useRef(null);
-  const ignoreNextRef = useRef(false);
+  const lastSaveTs = useRef(0); // timestamp of our last save
 
   useEffect(() => {
     if (!user) { if (unsubRef.current) unsubRef.current(); return; }
     const docRef = doc(db, "users", user.uid);
     let isFirst = true;
     unsubRef.current = onSnapshot(docRef, (snap) => {
-      if (isFirst) { isFirst = false; return; } // skip initial load (we handle it separately)
-      if (ignoreNextRef.current) { ignoreNextRef.current = false; return; }
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data._device === DEVICE_ID) return; // ignore own writes
-        if (remoteCallbackRef.current) remoteCallbackRef.current(data);
-      }
+      if (isFirst) { isFirst = false; return; }
+      if (!snap.exists()) return;
+      const data = snap.data();
+      // Ignore own writes: if device matches OR if update came within 2s of our save
+      if (data._device === DEVICE_ID) return;
+      const cloudTs = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
+      if (Math.abs(cloudTs - lastSaveTs.current) < 2000) return;
+      if (remoteCallbackRef.current) remoteCallbackRef.current(data);
     }, (err) => console.warn("Firestore:", err));
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
@@ -135,10 +136,11 @@ function useCloudSync(user) {
   const saveToCloud = useCallback(async (cats, tgs) => {
     if (!user) return;
     setSyncing(true);
-    ignoreNextRef.current = true;
     try {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
-      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tgs || [], updatedAt: new Date().toISOString(), _device: DEVICE_ID });
+      const now = new Date().toISOString();
+      lastSaveTs.current = new Date(now).getTime();
+      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tgs || [], updatedAt: now, _device: DEVICE_ID });
     } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
   }, [user]);
@@ -152,11 +154,43 @@ function useCloudSync(user) {
     } catch (e) { return null; }
   }, [user]);
 
-  return { saveToCloud, loadFromCloud, syncing, remoteCallbackRef };
+  const saveBackup = useCallback(async (cats, tgs) => {
+    if (!user) return;
+    try {
+      const backupRef = collection(db, "users", user.uid, "backups");
+      const now = new Date();
+      const id = now.toISOString().replace(/[:.]/g, "-");
+      const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
+      await setDoc(doc(backupRef, id), { categories: clean, tags: tgs || [], createdAt: now.toISOString() });
+      // Keep max 24 backups
+      const q2 = query(backupRef, orderBy("createdAt", "desc"));
+      const snaps = await getDocs(q2);
+      const docs = snaps.docs;
+      if (docs.length > 24) {
+        for (let i = 24; i < docs.length; i++) await deleteDoc(docs[i].ref);
+      }
+    } catch (e) { console.warn("Backup:", e); }
+  }, [user]);
+
+  const listBackups = useCallback(async () => {
+    if (!user) return [];
+    try {
+      const q2 = query(collection(db, "users", user.uid, "backups"), orderBy("createdAt", "desc"), limit(24));
+      const snaps = await getDocs(q2);
+      return snaps.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (e) { return []; }
+  }, [user]);
+
+  const restoreBackup = useCallback(async (backup) => {
+    if (!user) return null;
+    return { categories: backup.categories, tags: backup.tags };
+  }, [user]);
+
+  return { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup };
 }
 
 // ─── Profile Menu ──────────────────────────────────────
-function ProfileMenu({ user, onLogin, onLogout, syncing, theme, dk }) {
+function ProfileMenu({ user, onLogin, onLogout, onBackups, syncing, theme, dk }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -180,6 +214,7 @@ function ProfileMenu({ user, onLogin, onLogout, syncing, theme, dk }) {
               </div>
               <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: syncing ? "#f59e0b" : "#10b981" }}>{I.cloud}<span>{syncing ? "Guardando..." : "Sincronizado"}</span></div>
             </div>
+            <button onClick={() => { if (onBackups) onBackups(); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "12px 14px", margin: "2px 0", background: "none", border: "none", borderRadius: 8, color: theme.text, fontSize: 15, cursor: "pointer" }}>{I.reset} Backups</button>
             <button onClick={() => { onLogout(); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "12px 14px", margin: "4px 0 2px", background: "none", border: "none", borderRadius: 8, color: "#ef4444", fontSize: 15, cursor: "pointer" }}>{I.logout} Cerrar sesión</button>
           </>) : (<>
             <div style={{ padding: "12px 14px 8px" }}><div style={{ fontSize: 15, fontWeight: 600 }}>Sin sesión</div><div style={{ fontSize: 13, color: theme.textSec, marginTop: 3 }}>Sincroniza entre dispositivos</div></div>
@@ -242,10 +277,11 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
   );
 }
 
-function SessionEditModal({ taskId, sessIdx, session, onSave, onCancel, theme, dk }) {
+function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel, theme, dk }) {
   const MOODS = ["😫", "😕", "😐", "🙂", "🔥"];
   const [note, setNote] = useState(session.note || "");
   const [mood, setMood] = useState(session.mood || null);
+  const [sessTags, setSessTags] = useState(session.tags || []);
   const durH = Math.floor((session.duration || 0) / 3600);
   const durM = Math.floor(((session.duration || 0) % 3600) / 60);
   const durS = (session.duration || 0) % 60;
@@ -253,6 +289,7 @@ function SessionEditModal({ taskId, sessIdx, session, onSave, onCancel, theme, d
   const [mins, setMins] = useState(durM);
   const [secs, setSecs] = useState(durS);
   const newDuration = Math.max(0, hours * 3600 + mins * 60 + secs);
+  const toggleTag = (t) => setSessTags((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t]);
   return (
     <Modal title="Editar sesión" onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -283,13 +320,23 @@ function SessionEditModal({ taskId, sessIdx, session, onSave, onCancel, theme, d
             ))}
           </div>
         </div>
+        {allTags && allTags.length > 0 && (
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Etiquetas</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {allTags.map((tag) => (
+                <button key={tag} onClick={() => toggleTag(tag)} style={{ padding: "5px 12px", borderRadius: 16, border: sessTags.includes(tag) ? "2px solid #6366f1" : `1px solid ${theme.border}`, backgroundColor: sessTags.includes(tag) ? "#6366f122" : "transparent", color: sessTags.includes(tag) ? "#6366f1" : theme.textSec, fontSize: 13, cursor: "pointer" }}>{tag}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Nota</div>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="¿Qué hiciste?" rows={2} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
         </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-          <button onClick={() => onSave(taskId, sessIdx, { note, mood, duration: newDuration })} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+          <button onClick={() => onSave(taskId, sessIdx, { note, mood, duration: newDuration, tags: sessTags })} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
     </Modal>
@@ -474,6 +521,8 @@ export default function App() {
   const [activeTags, setActiveTags] = useState(() => { try { const r = localStorage.getItem("task-timer-active-tags"); if (r) return JSON.parse(r); } catch (e) {} return []; });
   const [newTagName, setNewTagName] = useState("");
   const [pendingStop, setPendingStop] = useState(null); // { id, duration, tags }
+  const [showBackups, setShowBackups] = useState(false);
+  const [backups, setBackups] = useState([]);
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -484,7 +533,7 @@ export default function App() {
   catsRef.current = categories;
   tagsRef.current = tags;
 
-  const { saveToCloud, loadFromCloud, syncing, remoteCallbackRef } = useCloudSync(user);
+  const { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup } = useCloudSync(user);
 
   // ─── Auth ──────────────────────────────────────────
   useEffect(() => {
@@ -555,6 +604,43 @@ export default function App() {
     if (saveRef.current) clearTimeout(saveRef.current);
     saveRef.current = setTimeout(() => saveToCloud(cats, tgs), 1500);
   }, [user, saveToCloud]);
+
+  // ─── Auto backup every hour ────────────────────────
+  const backupRef2 = useRef(null);
+  const lastBackupRef = useRef(0);
+  useEffect(() => {
+    if (!user || !initDone.current) return;
+    // Backup on first load
+    const doBackup = () => {
+      const now = Date.now();
+      if (now - lastBackupRef.current > 3600000) { // 1 hour
+        lastBackupRef.current = now;
+        saveBackup(catsRef.current, tagsRef.current);
+      }
+    };
+    doBackup();
+    backupRef2.current = setInterval(doBackup, 300000); // check every 5 min
+    return () => clearInterval(backupRef2.current);
+  }, [user, saveBackup]);
+
+  const loadBackups = async () => {
+    const list = await listBackups();
+    setBackups(list);
+    setShowBackups(true);
+  };
+
+  const doRestore = async (backup) => {
+    const data = await restoreBackup(backup);
+    if (data) {
+      if (activeId) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); }
+      const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
+      setCat(cats); saveLocal(cats); setExpanded(new Set(cats.map((c) => c.id)));
+      if (data.tags) { setTags(data.tags); saveTags(data.tags); }
+      saveToCloud(cats, data.tags || tags);
+      setShowBackups(false);
+      setTimerView(null);
+    }
+  };
 
   // ─── Elapsed display timer (NOT modifying categories) ──
   useEffect(() => {
@@ -687,7 +773,7 @@ export default function App() {
   const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; updateTags((p) => [...p, name.trim()]); };
   const delTag = (name) => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
   const toggleActiveTag = (name) => { setActiveTags((p) => { const next = p.includes(name) ? p.filter((t) => t !== name) : [...p, name]; try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
-  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
+  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [] }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -724,6 +810,40 @@ export default function App() {
     <div style={{ minHeight: "100dvh", backgroundColor: theme.bg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', WebkitFontSmoothing: "antialiased" }}>
 
       {showStats && <StatsView categories={categories} theme={theme} dk={dk} onClose={() => setShowStats(false)} />}
+
+      {/* Backups */}
+      {showBackups && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+              <button onClick={() => setShowBackups(false)} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Backups</h1>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, color: theme.textSec, padding: "12px 0" }}>
+              <span>Se crean automáticamente cada hora. Máx. 24 copias.</span>
+              <button onClick={async () => { await saveBackup(catsRef.current, tagsRef.current); lastBackupRef.current = Date.now(); const list = await listBackups(); setBackups(list); }} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>Crear ahora</button>
+            </div>
+            {backups.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay backups todavía</div>}
+            {backups.map((b) => {
+              const d = new Date(b.createdAt);
+              const cats = b.categories || [];
+              const totalTasks = cats.reduce((s, c) => s + (c.tasks?.length || 0), 0);
+              const totalSess = cats.reduce((s, c) => s + (c.tasks || []).reduce((a, t) => a + (t.sessions?.length || 0), 0), 0);
+              return (
+                <div key={b.id} style={{ padding: "14px 16px", marginBottom: 8, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>{d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" })} · {d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</div>
+                      <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3 }}>{cats.length} cat. · {totalTasks} tareas · {totalSess} sesiones</div>
+                    </div>
+                    <button onClick={() => setModal({ title: "¿Restaurar backup?", message: `Del ${d.toLocaleDateString("es-ES")} a las ${d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}. Reemplazará todos tus datos actuales.`, confirmLabel: "Restaurar", confirmColor: "#6366f1", onConfirm: () => { doRestore(b); setModal(null); } })} style={{ padding: "8px 16px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>Restaurar</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Timer fullscreen */}
       {timerView && atd?.task && (() => {
@@ -823,7 +943,7 @@ export default function App() {
       {/* Modals */}
       {modal && <Modal {...modal} onCancel={() => setModal(null)} theme={theme} />}
       {editModal && <EditModal {...editModal} onCancel={() => setEditModal(null)} theme={theme} />}
-      {noteModal && <SessionEditModal {...noteModal} onSave={saveSessionEdit} onCancel={() => setNoteModal(null)} theme={theme} dk={dk} />}
+      {noteModal && <SessionEditModal {...noteModal} allTags={tags} onSave={saveSessionEdit} onCancel={() => setNoteModal(null)} theme={theme} dk={dk} />}
 
       {/* Mood picker */}
       {pendingStop && (() => {
@@ -853,7 +973,7 @@ export default function App() {
               <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5 }}>{I.clock}<span>Hoy: {fmtLong(totalToday)}</span></div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} syncing={syncing} theme={theme} dk={dk} />
+              <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} onBackups={loadBackups} syncing={syncing} theme={theme} dk={dk} />
               <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
               <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
             </div>
@@ -936,6 +1056,17 @@ export default function App() {
                           </div>
                         </div>
                         {t.goalDaily > 0 && (<div style={{ marginTop: 8, height: 4, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${goalPct}%`, backgroundColor: goalPct >= 100 ? "#10b981" : cat.color, borderRadius: 2 }} /></div>)}
+                        {/* Inline subtasks */}
+                        {(t.subtasks || []).length > 0 && (
+                          <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${theme.border}` }} onClick={(e) => e.stopPropagation()}>
+                            {(t.subtasks || []).map((st) => (
+                              <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }}>
+                                <button onClick={() => toggleSubtask(t.id, st.id)} style={{ width: 18, height: 18, borderRadius: 5, border: st.done ? "none" : `1.5px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
+                                <span style={{ fontSize: 13, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text }}>{st.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
