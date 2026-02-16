@@ -106,6 +106,16 @@ const ensureTask = (t) => {
   return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, ...rest };
 };
 
+const getWeekStart = () => {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon...
+  const diff = day === 0 ? 6 : day - 1; // days since Monday
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+};
+
 // ─── Device ID (unique per browser tab) ────────────────
 const DEVICE_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -543,6 +553,8 @@ export default function App() {
   const [editingSubVal, setEditingSubVal] = useState("");
   const [editingTagIdx, setEditingTagIdx] = useState(null);
   const [editingTagVal, setEditingTagVal] = useState("");
+  const [editingTaskName, setEditingTaskName] = useState(false);
+  const [editingTaskNameVal, setEditingTaskNameVal] = useState("");
   const [tags, setTags] = useState(loadTags);
   const [activeTags, setActiveTags] = useState(() => { try { const r = localStorage.getItem("task-timer-active-tags"); if (r) return JSON.parse(r); } catch (e) {} return []; });
   const [newTagName, setNewTagName] = useState("");
@@ -639,13 +651,13 @@ export default function App() {
     // Backup on first load
     const doBackup = () => {
       const now = Date.now();
-      if (now - lastBackupRef.current > 3600000) { // 1 hour
+      if (now - lastBackupRef.current > 21600000) { // 6 hours
         lastBackupRef.current = now;
         saveBackup(catsRef.current, tagsRef.current);
       }
     };
     doBackup();
-    backupRef2.current = setInterval(doBackup, 300000); // check every 5 min
+    backupRef2.current = setInterval(doBackup, 600000); // check every 10 min
     return () => clearInterval(backupRef2.current);
   }, [user, saveBackup]);
 
@@ -746,6 +758,8 @@ export default function App() {
     });
     setActiveId(null);
     setElapsed(0);
+    setActiveTags([]);
+    try { localStorage.setItem("task-timer-active-tags", "[]"); } catch (e) {}
     setPendingStop(null);
   };
 
@@ -783,14 +797,14 @@ export default function App() {
   };
 
   const resetTask = (id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); } update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, totalSeconds: 0, isRunning: false, startedAt: null, sessions: [] } : t) }))); setModal(null); };
-  const completeTask = (id) => { if (activeId === id) doStop(id); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, isRunning: false, startedAt: null } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
-  const uncomplete = (id) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: false } : t) })));
+  const completeTask = (id) => { if (activeId === id) doStop(id); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, completedAt: new Date().toISOString(), isRunning: false, startedAt: null } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
+  const uncomplete = (id) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: false, completedAt: null } : t) })));
   const delTask = (id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === id) setTimerView(null); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== id) }))); setModal(null); };
   const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (activeId === t.id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === t.id) setTimerView(null); }); update((p) => p.filter((x) => x.id !== id)); setModal(null); };
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
-  const editTaskSave = (id, name, _c, goalDaily) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), goalDaily } : t) }))); setEditModal(null); };
+  const editTaskSave = (id, name, _c, goalDaily) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}) } : t) }))); setEditModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
   const addSubtask = (taskId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
@@ -849,7 +863,7 @@ export default function App() {
               <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Backups</h1>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, color: theme.textSec, padding: "12px 0" }}>
-              <span>Se crean automáticamente cada hora. Máx. 24 copias.</span>
+              <span>Se crean automáticamente cada 6 horas. Máx. 24 copias.</span>
               <button onClick={async () => { await saveBackup(catsRef.current, tagsRef.current); lastBackupRef.current = Date.now(); const list = await listBackups(); setBackups(list); }} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>Crear ahora</button>
             </div>
             {backups.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay backups todavía</div>}
@@ -881,12 +895,16 @@ export default function App() {
         const displaySecs = isActive ? elapsed : 0;
         return (
           <div style={{ position: "fixed", inset: 0, backgroundColor: dk ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(20px)", zIndex: 100, display: "flex", flexDirection: "column", animation: "fadeIn .25s" }}>
-            <button onClick={() => setTimerView(null)} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 10, zIndex: 2 }}>{I.x}</button>
+            <button onClick={() => { setTimerView(null); setEditingTaskName(false); }} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 10, zIndex: 2 }}>{I.x}</button>
             {/* Fixed top */}
             <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 20px 24px" }}>
               <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.color, marginBottom: 12, opacity: 0.8 }} />
               <div style={{ fontSize: 13, color: theme.textSec, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>{c.name}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 24, textAlign: "center", padding: "0 20px" }}>{t.name}</div>
+              {editingTaskName ? (
+                <input autoFocus value={editingTaskNameVal} onChange={(e) => setEditingTaskNameVal(e.target.value)} onBlur={() => { if (editingTaskNameVal.trim()) editTaskSave(timerView, editingTaskNameVal.trim()); setEditingTaskName(false); }} onKeyDown={(e) => { if (e.key === "Enter") { if (editingTaskNameVal.trim()) editTaskSave(timerView, editingTaskNameVal.trim()); setEditingTaskName(false); } if (e.key === "Escape") setEditingTaskName(false); }} style={{ fontSize: 20, fontWeight: 600, textAlign: "center", padding: "4px 12px", marginBottom: 24, border: `1px solid ${theme.border}`, borderRadius: 10, backgroundColor: theme.surface, color: theme.text, outline: "none", width: "80%", maxWidth: 300, fontFamily: "inherit" }} />
+              ) : (
+                <div onClick={() => { setEditingTaskName(true); setEditingTaskNameVal(t.name); }} style={{ fontSize: 20, fontWeight: 600, marginBottom: 24, textAlign: "center", padding: "0 20px", cursor: "pointer" }}>{t.name}</div>
+              )}
               <div style={{ fontSize: "min(64px, 13vw)", fontWeight: 200, fontVariantNumeric: "tabular-nums", color: isActive ? theme.text : theme.textSec, marginBottom: 24, letterSpacing: 3 }}>{formatTime(displaySecs)}</div>
               <button onClick={() => toggleTimer(timerView)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", backgroundColor: isActive ? (dk ? "#fff" : "#000") : c.color, color: isActive ? (dk ? "#000" : "#fff") : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: `0 0 40px ${isActive ? (dk ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)") : c.color + "44"}` }}>
                 {isActive ? I.pause : I.play}
@@ -1085,7 +1103,8 @@ export default function App() {
         <div style={{ paddingTop: 4, paddingBottom: 100 }}>
           {categories.map((cat, catIdx) => {
             const aTasks = cat.tasks.filter((t) => !t.completed);
-            const cTasks = cat.tasks.filter((t) => t.completed);
+            const weekStart = getWeekStart();
+            const cTasks = cat.tasks.filter((t) => t.completed && t.completedAt && new Date(t.completedAt) >= weekStart);
             return (
               <div key={cat.id} style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0" }}>
