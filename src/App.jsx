@@ -242,14 +242,55 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
   );
 }
 
-function NoteModal({ taskId, sessIdx, note, onSave, onCancel, theme }) {
-  const [val, setVal] = useState(note || "");
+function SessionEditModal({ taskId, sessIdx, session, onSave, onCancel, theme, dk }) {
+  const MOODS = ["😫", "😕", "😐", "🙂", "🔥"];
+  const [note, setNote] = useState(session.note || "");
+  const [mood, setMood] = useState(session.mood || null);
+  const durH = Math.floor((session.duration || 0) / 3600);
+  const durM = Math.floor(((session.duration || 0) % 3600) / 60);
+  const durS = (session.duration || 0) % 60;
+  const [hours, setHours] = useState(durH);
+  const [mins, setMins] = useState(durM);
+  const [secs, setSecs] = useState(durS);
+  const newDuration = Math.max(0, hours * 3600 + mins * 60 + secs);
   return (
-    <Modal title="Nota de sesión" onCancel={onCancel} theme={theme}>
-      <textarea autoFocus value={val} onChange={(e) => setVal(e.target.value)} placeholder="¿Qué hiciste en esta sesión?" rows={3} style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-        <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-        <button onClick={() => onSave(taskId, sessIdx, val)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+    <Modal title="Editar sesión" onCancel={onCancel} theme={theme}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Duración</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <input type="number" value={hours} onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))} min="0" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
+              <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>horas</div>
+            </div>
+            <span style={{ fontSize: 20, color: theme.textSec, fontWeight: 300 }}>:</span>
+            <div style={{ flex: 1 }}>
+              <input type="number" value={mins} onChange={(e) => setMins(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} min="0" max="59" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
+              <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>min</div>
+            </div>
+            <span style={{ fontSize: 20, color: theme.textSec, fontWeight: 300 }}>:</span>
+            <div style={{ flex: 1 }}>
+              <input type="number" value={secs} onChange={(e) => setSecs(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} min="0" max="59" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
+              <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>seg</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Estado de ánimo</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {MOODS.map((m) => (
+              <button key={m} onClick={() => setMood(mood === m ? null : m)} style={{ width: 42, height: 42, borderRadius: 10, border: mood === m ? "2px solid #6366f1" : `1px solid ${theme.border}`, backgroundColor: mood === m ? "#6366f122" : theme.surface, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{m}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Nota</div>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="¿Qué hiciste?" rows={2} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
+          <button onClick={() => onSave(taskId, sessIdx, { note, mood, duration: newDuration })} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+        </div>
       </div>
     </Modal>
   );
@@ -430,7 +471,7 @@ export default function App() {
   const [noteModal, setNoteModal] = useState(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [tags, setTags] = useState(loadTags);
-  const [activeTags, setActiveTags] = useState([]);
+  const [activeTags, setActiveTags] = useState(() => { try { const r = localStorage.getItem("task-timer-active-tags"); if (r) return JSON.parse(r); } catch (e) {} return []; });
   const [newTagName, setNewTagName] = useState("");
   const [pendingStop, setPendingStop] = useState(null); // { id, duration, tags }
   const intRef = useRef(null);
@@ -469,14 +510,7 @@ export default function App() {
         saveToCloud(catsRef.current, tagsRef.current);
         return;
       }
-      // Check if local has a running timer
-      const localRunning = catsRef.current.some((c) => c.tasks.some((t) => t.isRunning && t.startedAt));
-      if (localRunning) {
-        // Keep local, push to cloud
-        saveToCloud(catsRef.current, tagsRef.current);
-        return;
-      }
-      // Load from cloud
+      // Always load from cloud (source of truth)
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats); setExpanded(new Set(cats.map((c) => c.id)));
       if (data.tags) { setTags(data.tags); saveTags(data.tags); }
@@ -600,7 +634,6 @@ export default function App() {
     });
     setActiveId(null);
     setElapsed(0);
-    setActiveTags([]);
     setPendingStop(null);
   };
 
@@ -652,9 +685,9 @@ export default function App() {
   const toggleSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) })));
   const delSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) })));
   const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; updateTags((p) => [...p, name.trim()]); };
-  const delTag = (name) => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => p.filter((t) => t !== name)); };
-  const toggleActiveTag = (name) => { setActiveTags((p) => p.includes(name) ? p.filter((t) => t !== name) : [...p, name]); };
-  const saveSessionNote = (taskId, sessIdx, note) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; s[sessIdx] = { ...s[sessIdx], note }; return { ...t, sessions: s }; }) }))); setNoteModal(null); };
+  const delTag = (name) => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
+  const toggleActiveTag = (name) => { setActiveTags((p) => { const next = p.includes(name) ? p.filter((t) => t !== name) : [...p, name]; try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
+  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -770,7 +803,7 @@ export default function App() {
                         <span>{s.mood ? `${s.mood} ` : ""}{fmtShort(s.duration)}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span>{s.date ? `${s.date} · ${s.endedAt}` : s.endedAt}</span>
-                          <button onClick={() => setNoteModal({ taskId: timerView, sessIdx: si, note: s.note || "" })} style={{ background: "none", border: "none", color: s.note ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 2, opacity: s.note ? 1 : 0.4 }}>{I.note}</button>
+                          <button onClick={() => setNoteModal({ taskId: timerView, sessIdx: si, session: s })} style={{ background: "none", border: "none", color: (s.note || s.mood) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 2, opacity: (s.note || s.mood) ? 1 : 0.4 }}>{I.edit}</button>
                           <button onClick={() => setModal({ title: "¿Eliminar sesión?", message: `${fmtShort(s.duration)} · ${s.date || ""} ${s.endedAt || ""}`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delSession(timerView, si) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
                         </div>
                       </div>
@@ -790,7 +823,7 @@ export default function App() {
       {/* Modals */}
       {modal && <Modal {...modal} onCancel={() => setModal(null)} theme={theme} />}
       {editModal && <EditModal {...editModal} onCancel={() => setEditModal(null)} theme={theme} />}
-      {noteModal && <NoteModal {...noteModal} onSave={saveSessionNote} onCancel={() => setNoteModal(null)} theme={theme} />}
+      {noteModal && <SessionEditModal {...noteModal} onSave={saveSessionEdit} onCancel={() => setNoteModal(null)} theme={theme} dk={dk} />}
 
       {/* Mood picker */}
       {pendingStop && (() => {
