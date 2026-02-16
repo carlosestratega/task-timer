@@ -329,10 +329,77 @@ function StatsView({ categories, theme, dk, onClose }) {
           <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por categoría</div>
           {catStats.map((c) => (<div key={c.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c.color }} /><span style={{ fontSize: 15, fontWeight: 500 }}>{c.name}</span></div><span style={{ fontSize: 14, fontWeight: 600, color: c.color }}>{fmtShort(c.pTime)}</span></div><div style={{ height: 6, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(c.pTime / maxC) * 100}%`, backgroundColor: c.color, borderRadius: 3 }} /></div></div>))}
         </div>)}
+        {/* Mood analysis */}
+        {(() => {
+          const MOODS = ["😫", "😕", "😐", "🙂", "🔥"];
+          const moodSessions = fTasks.flatMap((t) => t.sessions.filter(filterS).filter((s) => s.mood).map((s) => ({ ...s, taskName: t.name, catName: t.catName, catColor: t.catColor })));
+          if (moodSessions.length < 1) return null;
+          const moodCounts = MOODS.map((m) => ({ mood: m, count: moodSessions.filter((s) => s.mood === m).length, totalTime: moodSessions.filter((s) => s.mood === m).reduce((a, s) => a + s.duration, 0) }));
+          const maxCount = Math.max(...moodCounts.map((m) => m.count), 1);
+          const avgMood = moodSessions.reduce((a, s) => a + MOODS.indexOf(s.mood), 0) / moodSessions.length;
+          // Best/worst tasks by mood (min 3 sessions)
+          const taskMoods = {};
+          fTasks.forEach((t) => { const ms = t.sessions.filter(filterS).filter((s) => s.mood); if (ms.length >= 3) { const avg = ms.reduce((a, s) => a + MOODS.indexOf(s.mood), 0) / ms.length; taskMoods[t.name] = { avg, count: ms.length, catColor: t.catColor }; } });
+          const taskMoodArr = Object.entries(taskMoods).sort((a, b) => b[1].avg - a[1].avg);
+          // Tag moods (min 3 sessions)
+          const tagMoods = {};
+          moodSessions.forEach((s) => { (s.tags || []).forEach((tag) => { if (!tagMoods[tag]) tagMoods[tag] = []; tagMoods[tag].push(MOODS.indexOf(s.mood)); }); });
+          const tagMoodArr = Object.entries(tagMoods).filter(([, v]) => v.length >= 3).map(([tag, vals]) => ({ tag, avg: vals.reduce((a, b) => a + b, 0) / vals.length, count: vals.length })).sort((a, b) => b.avg - a.avg);
+
+          return (
+            <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Estado de ánimo</div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 16 }}>
+                {moodCounts.map((m) => (
+                  <div key={m.mood} style={{ textAlign: "center", flex: "0 0 auto" }}>
+                    <div style={{ height: 60, display: "flex", alignItems: "flex-end", justifyContent: "center", marginBottom: 6 }}>
+                      <div style={{ width: 24, height: Math.max(4, (m.count / maxCount) * 56), backgroundColor: m.mood === "🔥" ? "#10b981" : m.mood === "🙂" ? "#34d399" : m.mood === "😐" ? "#fbbf24" : m.mood === "😕" ? "#f97316" : "#ef4444", borderRadius: 4, opacity: m.count > 0 ? 0.8 : 0.15 }} />
+                    </div>
+                    <div style={{ fontSize: 22 }}>{m.mood}</div>
+                    <div style={{ fontSize: 11, color: theme.textSec, marginTop: 2 }}>{m.count}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ textAlign: "center", fontSize: 14, color: theme.textSec, marginBottom: 16 }}>
+                Media: <span style={{ fontSize: 20 }}>{MOODS[Math.round(avgMood)]}</span>
+                <span style={{ fontSize: 12, marginLeft: 6 }}>({moodSessions.length} sesiones)</span>
+              </div>
+              {taskMoodArr.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 8 }}>Tareas por ánimo (mín. 3 sesiones)</div>
+                  {taskMoodArr.map(([name, data]) => (
+                    <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+                      <span style={{ fontSize: 18 }}>{MOODS[Math.round(data.avg)]}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                        <div style={{ fontSize: 11, color: theme.textSec }}>{data.count} ses.</div>
+                      </div>
+                      <div style={{ width: 50, height: 4, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${(data.avg / 4) * 100}%`, backgroundColor: data.catColor, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {tagMoodArr.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 8 }}>Etiquetas por ánimo (mín. 3 sesiones)</div>
+                  {tagMoodArr.map((t) => (
+                    <div key={t.tag} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+                      <span style={{ fontSize: 18 }}>{MOODS[Math.round(t.avg)]}</span>
+                      <span style={{ fontSize: 14, flex: 1 }}>{t.tag}</span>
+                      <span style={{ fontSize: 11, color: theme.textSec }}>{t.count} ses.</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <div style={{ padding: "20px 0 100px" }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por tarea</div>
           {tStats.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec, fontSize: 14 }}>Sin datos</div>}
-          {tStats.map((t) => (<div key={t.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div><div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}><div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.{t.completed && <span style={{ color: "#10b981" }}> ✓</span>}{t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}</div></div><span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span></div><div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7 }} /></div></div>))}
+          {tStats.map((t) => { const moodSess = t.fSess.filter((s) => s.mood); const avgM = moodSess.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moodSess.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moodSess.length)] : null; return (<div key={t.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div><div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}><div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.{avgM && <span> · {avgM}</span>}{t.completed && <span style={{ color: "#10b981" }}> ✓</span>}{t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}</div></div><span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span></div><div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7 }} /></div></div>); })}
         </div>
       </div>
     </div>
@@ -365,6 +432,7 @@ export default function App() {
   const [tags, setTags] = useState(loadTags);
   const [activeTags, setActiveTags] = useState([]);
   const [newTagName, setNewTagName] = useState("");
+  const [pendingStop, setPendingStop] = useState(null); // { id, duration, tags }
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -495,16 +563,33 @@ export default function App() {
   const getTask = useCallback((id) => { for (const c of categories) { const t = c.tasks.find((x) => x.id === id); if (t) return { task: t, cat: c }; } return {}; }, [categories]);
 
   // ─── Timer: Start / Stop ───────────────────────────
+  const MOODS = ["😫", "😕", "😐", "🙂", "🔥"];
+
   const doStop = (id) => {
     clearInterval(intRef.current);
-    const sessionTags = [...activeTags];
+    // Calculate duration before clearing
+    let duration = 0;
+    for (const c of catsRef.current) { for (const t of c.tasks) { if (t.id === id && t.startedAt) { duration = calcElapsed(t.startedAt); break; } } }
+    if (duration > 0) {
+      // Show emotion picker
+      setPendingStop({ id, duration, tags: [...activeTags] });
+    } else {
+      // No duration, just stop
+      finishStop(id, null);
+    }
+  };
+
+  const finishStop = (id, mood) => {
+    const ps = pendingStop || { id, duration: 0, tags: [...activeTags] };
     setCat((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
         if (t.id === id && t.startedAt) {
           const duration = calcElapsed(t.startedAt);
           if (duration > 0) {
             const now = new Date();
-            return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: sessionTags }] };
+            const session = { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: ps.tags };
+            if (mood) session.mood = mood;
+            return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, session] };
           }
         }
         return t.id === id ? { ...t, isRunning: false, startedAt: null } : t;
@@ -516,6 +601,7 @@ export default function App() {
     setActiveId(null);
     setElapsed(0);
     setActiveTags([]);
+    setPendingStop(null);
   };
 
   const doStart = (id) => {
@@ -681,7 +767,7 @@ export default function App() {
                   return (
                     <div key={si} style={{ padding: "7px 0", borderBottom: `1px solid ${theme.border}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: theme.textSec }}>
-                        <span>{fmtShort(s.duration)}</span>
+                        <span>{s.mood ? `${s.mood} ` : ""}{fmtShort(s.duration)}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span>{s.date ? `${s.date} · ${s.endedAt}` : s.endedAt}</span>
                           <button onClick={() => setNoteModal({ taskId: timerView, sessIdx: si, note: s.note || "" })} style={{ background: "none", border: "none", color: s.note ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 2, opacity: s.note ? 1 : 0.4 }}>{I.note}</button>
@@ -705,6 +791,25 @@ export default function App() {
       {modal && <Modal {...modal} onCancel={() => setModal(null)} theme={theme} />}
       {editModal && <EditModal {...editModal} onCancel={() => setEditModal(null)} theme={theme} />}
       {noteModal && <NoteModal {...noteModal} onSave={saveSessionNote} onCancel={() => setNoteModal(null)} theme={theme} />}
+
+      {/* Mood picker */}
+      {pendingStop && (() => {
+        const { task: pt, cat: pc } = getTask(pendingStop.id) || {};
+        return (
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s" }} onClick={() => finishStop(pendingStop.id, null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "28px 24px", maxWidth: 340, width: "100%", textAlign: "center" }}>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>¿Cómo te ha ido?</div>
+              <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>{pt?.name || ""} · {fmtShort(pendingStop.duration)}</div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 12, margin: "20px 0" }}>
+                {MOODS.map((m) => (
+                  <button key={m} onClick={() => finishStop(pendingStop.id, m)} style={{ width: 52, height: 52, borderRadius: 14, border: `2px solid ${theme.border}`, backgroundColor: theme.surface, fontSize: 28, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform .1s, border-color .15s" }} onMouseEnter={(e) => { e.target.style.transform = "scale(1.15)"; e.target.style.borderColor = pc?.color || "#6366f1"; }} onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; e.target.style.borderColor = theme.border; }}>{m}</button>
+                ))}
+              </div>
+              <button onClick={() => finishStop(pendingStop.id, null)} style={{ background: "none", border: "none", color: theme.textSec, fontSize: 14, cursor: "pointer", padding: "8px 16px" }}>Saltar</button>
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
         {/* Header */}
