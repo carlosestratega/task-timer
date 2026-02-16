@@ -435,7 +435,16 @@ export default function App() {
   const [dk, setDk] = useState(loadTheme);
   const [categories, setCat] = useState(() => {
     const l = loadLocal();
-    return l ? l.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) })) : defaultCategories;
+    if (!l) return defaultCategories;
+    return l.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+      const task = ensureTask(t);
+      if (task.isRunning && task.startedAt) {
+        const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
+        if (elapsed > 0 && elapsed < 86400) { task.currentSeconds = elapsed; }
+        else { task.isRunning = false; task.startedAt = null; task.currentSeconds = 0; }
+      }
+      return task;
+    }) }));
   });
   const [expanded, setExpanded] = useState(() => new Set(categories.map((c) => c.id)));
   const [active, setActive] = useState(null);
@@ -480,19 +489,24 @@ export default function App() {
     if (!user || !cloudLoaded || initDone.current) return;
     initDone.current = true;
     if (cloudData && cloudData.length > 0) {
-      const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
-      setCat(data); saveLocal(data); setExpanded(new Set(data.map((c) => c.id)));
-      if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
-      // Resume any running timer from cloud
-      for (const c of data) {
-        for (const t of c.tasks) {
-          if (t.isRunning && t.startedAt) {
-            const elapsed = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
-            if (elapsed > 0 && elapsed < 86400) { setActive(t.id); }
-            break;
+      let resumeId = null;
+      const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+        const task = ensureTask(t);
+        // Recalculate elapsed time for running timers
+        if (task.isRunning && task.startedAt) {
+          const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
+          if (elapsed > 0 && elapsed < 86400) {
+            task.currentSeconds = elapsed;
+            resumeId = task.id;
+          } else {
+            task.isRunning = false; task.startedAt = null; task.currentSeconds = 0;
           }
         }
-      }
+        return task;
+      }) }));
+      setCat(data); saveLocal(data); setExpanded(new Set(data.map((c) => c.id)));
+      if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
+      if (resumeId) setActive(resumeId);
     } else { saveToCloud(categories, tags); }
   }, [cloudData, cloudLoaded, user]);
 
@@ -524,19 +538,12 @@ export default function App() {
   }, [active]);
   useEffect(() => { const h = (e) => { if (active) { e.preventDefault(); e.returnValue = ""; } }; window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h); }, [active]);
 
-  // Resume running timer on app load
+  // Resume running timer on app load (from localStorage)
   useEffect(() => {
     for (const c of categories) {
       for (const t of c.tasks) {
         if (t.isRunning && t.startedAt && !active) {
-          const elapsed = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
-          if (elapsed > 0 && elapsed < 86400) { // max 24h sanity check
-            setActive(t.id);
-            setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((task) => task.id === t.id ? { ...task, currentSeconds: elapsed } : task) })));
-          } else {
-            // Timer too old, auto-stop
-            setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((task) => task.id === t.id ? { ...task, isRunning: false, startedAt: null, currentSeconds: 0 } : task) })));
-          }
+          setActive(t.id);
           return;
         }
       }
