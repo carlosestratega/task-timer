@@ -9,7 +9,7 @@ import {
   browserLocalPersistence,
   setPersistence,
 } from "firebase/auth";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 // ─── Helpers ───────────────────────────────────────────
 const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -105,22 +105,24 @@ function useCloudSync(user) {
   const [cloudTags, setCloudTags] = useState(null);
   const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const unsubRef = useRef(null);
 
+  // Load once when user logs in (no real-time listener)
   useEffect(() => {
-    if (!user) { if (unsubRef.current) unsubRef.current(); setCloudData(null); setCloudTags(null); setCloudLoaded(false); return; }
-    const docRef = doc(db, "users", user.uid);
-    unsubRef.current = onSnapshot(docRef, (snap) => {
-      if (snap.exists()) {
-        setCloudData(snap.data().categories || []);
-        setCloudTags(snap.data().tags || null);
-      } else {
-        setCloudData([]);
-        setCloudTags(null);
-      }
+    if (!user) { setCloudData(null); setCloudTags(null); setCloudLoaded(false); return; }
+    const load = async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          setCloudData(snap.data().categories || []);
+          setCloudTags(snap.data().tags || null);
+        } else {
+          setCloudData([]);
+          setCloudTags(null);
+        }
+      } catch (e) { console.warn("Cloud load error:", e); setCloudData([]); }
       setCloudLoaded(true);
-    }, (err) => console.warn("Firestore error:", err));
-    return () => { if (unsubRef.current) unsubRef.current(); };
+    };
+    load();
   }, [user]);
 
   const saveToCloud = useCallback(async (cats, tags) => {
@@ -484,15 +486,24 @@ export default function App() {
   };
   const handleLogout = async () => { if (active) stopTask(active); await signOut(auth); initDone.current = false; };
 
-  // Cloud sync
+  // Cloud sync - load once on login
   useEffect(() => {
     if (!user || !cloudLoaded || initDone.current) return;
     initDone.current = true;
+
+    // Check if local has a running timer
+    const hasRunningLocal = categories.some((c) => c.tasks.some((t) => t.isRunning && t.startedAt));
+
+    if (hasRunningLocal) {
+      // Local has active timer, push to cloud instead of overwriting
+      saveToCloud(categories, tags);
+      return;
+    }
+
     if (cloudData && cloudData.length > 0) {
       let resumeId = null;
       const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
         const task = ensureTask(t);
-        // Recalculate elapsed time for running timers
         if (task.isRunning && task.startedAt) {
           const elapsed = Math.floor((Date.now() - new Date(task.startedAt).getTime()) / 1000);
           if (elapsed > 0 && elapsed < 86400) {
@@ -507,13 +518,18 @@ export default function App() {
       setCat(data); saveLocal(data); setExpanded(new Set(data.map((c) => c.id)));
       if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
       if (resumeId) setActive(resumeId);
-    } else { saveToCloud(categories, tags); }
+    } else {
+      saveToCloud(categories, tags);
+    }
   }, [cloudData, cloudLoaded, user]);
 
   useEffect(() => {
     saveLocal(categories);
     saveTags(tags);
-    if (user && initDone.current) { if (saveRef.current) clearTimeout(saveRef.current); saveRef.current = setTimeout(() => saveToCloud(categories, tags), 2000); }
+    if (user && initDone.current) {
+      if (saveRef.current) clearTimeout(saveRef.current);
+      saveRef.current = setTimeout(() => saveToCloud(categories, tags), 5000);
+    }
   }, [categories, tags, user, saveToCloud]);
 
   // Theme
