@@ -88,16 +88,16 @@ const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4
 
 const defaultCategories = [
   { id: "cat-1", name: "Contenido", color: "#6366f1", tasks: [
-    { id: "t-1", name: "Creación de contenido RRSS", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
-    { id: "t-2", name: "Edición de vídeos", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
+    { id: "t-1", name: "Creación de contenido RRSS", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
+    { id: "t-2", name: "Edición de vídeos", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
   ]},
   { id: "cat-2", name: "Negocio", color: "#10b981", tasks: [
-    { id: "t-3", name: "Análisis competencia", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
-    { id: "t-4", name: "Estrategia de ventas", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
+    { id: "t-3", name: "Análisis competencia", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
+    { id: "t-4", name: "Estrategia de ventas", totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" },
   ]},
 ];
 
-const ensureTask = (t) => ({ subtasks: [], notes: "", goalDaily: 0, completed: false, ...t });
+const ensureTask = (t) => ({ subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, ...t });
 
 // ─── Cloud Sync ────────────────────────────────────────
 function useCloudSync(user) {
@@ -127,7 +127,7 @@ function useCloudSync(user) {
     if (!user) return;
     setSyncing(true);
     try {
-      const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ({ ...ensureTask(t), isRunning: false, currentSeconds: 0 })) }));
+      const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ({ ...ensureTask(t), currentSeconds: 0 })) }));
       await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tags || [], updatedAt: new Date().toISOString() });
     } catch (e) { console.warn("Save error:", e); }
     setSyncing(false);
@@ -483,6 +483,16 @@ export default function App() {
       const data = cloudData.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(data); saveLocal(data); setExpanded(new Set(data.map((c) => c.id)));
       if (cloudTags) { setTags(cloudTags); saveTags(cloudTags); }
+      // Resume any running timer from cloud
+      for (const c of data) {
+        for (const t of c.tasks) {
+          if (t.isRunning && t.startedAt) {
+            const elapsed = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
+            if (elapsed > 0 && elapsed < 86400) { setActive(t.id); }
+            break;
+          }
+        }
+      }
     } else { saveToCloud(categories, tags); }
   }, [cloudData, cloudLoaded, user]);
 
@@ -500,10 +510,38 @@ export default function App() {
 
   // Timer
   useEffect(() => {
-    if (active) { intRef.current = setInterval(() => { setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === active ? { ...t, currentSeconds: t.currentSeconds + 1 } : t) }))); }, 1000); }
+    if (active) {
+      intRef.current = setInterval(() => {
+        setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+          if (t.id === active && t.startedAt) {
+            return { ...t, currentSeconds: Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000) };
+          }
+          return t;
+        }) })));
+      }, 1000);
+    }
     return () => clearInterval(intRef.current);
   }, [active]);
   useEffect(() => { const h = (e) => { if (active) { e.preventDefault(); e.returnValue = ""; } }; window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h); }, [active]);
+
+  // Resume running timer on app load
+  useEffect(() => {
+    for (const c of categories) {
+      for (const t of c.tasks) {
+        if (t.isRunning && t.startedAt && !active) {
+          const elapsed = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
+          if (elapsed > 0 && elapsed < 86400) { // max 24h sanity check
+            setActive(t.id);
+            setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((task) => task.id === t.id ? { ...task, currentSeconds: elapsed } : task) })));
+          } else {
+            // Timer too old, auto-stop
+            setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((task) => task.id === t.id ? { ...task, isRunning: false, startedAt: null, currentSeconds: 0 } : task) })));
+          }
+          return;
+        }
+      }
+    }
+  }, []); // only on mount
 
   const toggle = (id) => setExpanded((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const getTask = useCallback((id) => { for (const c of categories) { const t = c.tasks.find((x) => x.id === id); if (t) return { task: t, cat: c }; } return {}; }, [categories]);
@@ -512,11 +550,15 @@ export default function App() {
     clearInterval(intRef.current);
     const sessionTags = [...activeTags];
     setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
-      if (t.id === id && t.currentSeconds > 0) {
-        const now = new Date();
-        return { ...t, isRunning: false, totalSeconds: t.totalSeconds + t.currentSeconds, sessions: [...t.sessions, { duration: t.currentSeconds, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: sessionTags }], currentSeconds: 0 };
+      if (t.id === id && t.startedAt) {
+        const duration = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
+        if (duration > 0) {
+          const now = new Date();
+          return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: sessionTags }], currentSeconds: 0 };
+        }
+        return { ...t, isRunning: false, startedAt: null, currentSeconds: 0 };
       }
-      return t.id === id ? { ...t, isRunning: false, currentSeconds: 0 } : t;
+      return t.id === id ? { ...t, isRunning: false, startedAt: null, currentSeconds: 0 } : t;
     }) })));
     setActive(null);
     setActiveTags([]);
@@ -524,17 +566,17 @@ export default function App() {
 
   const toggleTimer = (id) => {
     if (active === id) stopTask(id);
-    else { if (active) stopTask(active); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, currentSeconds: 0 } : t) }))); setActive(id); setTimerView(id); }
+    else { if (active) stopTask(active); const now = new Date().toISOString(); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, currentSeconds: 0, startedAt: now } : t) }))); setActive(id); setTimerView(id); }
   };
 
   // CRUD
-  const resetTask = (id) => { if (active === id) { clearInterval(intRef.current); setActive(null); } setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, totalSeconds: 0, currentSeconds: 0, isRunning: false, sessions: [] } : t) }))); setModal(null); };
-  const completeTask = (id) => { if (active === id) stopTask(id); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, isRunning: false, currentSeconds: 0 } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
+  const resetTask = (id) => { if (active === id) { clearInterval(intRef.current); setActive(null); } setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, totalSeconds: 0, currentSeconds: 0, isRunning: false, startedAt: null, sessions: [] } : t) }))); setModal(null); };
+  const completeTask = (id) => { if (active === id) stopTask(id); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, isRunning: false, startedAt: null, currentSeconds: 0 } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
   const uncomplete = (id) => setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: false } : t) })));
   const delTask = (id) => { if (active === id) { clearInterval(intRef.current); setActive(null); } if (timerView === id) setTimerView(null); setCat((p) => p.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== id) }))); setModal(null); };
   const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (active === t.id) { clearInterval(intRef.current); setActive(null); } if (timerView === t.id) setTimerView(null); }); setCat((p) => p.filter((x) => x.id !== id)); setModal(null); };
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; setCat((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
-  const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; setCat((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
+  const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, currentSeconds: 0, isRunning: false, completed: false, goalDaily: 0, startedAt: null, sessions: [], subtasks: [], notes: "" }; setCat((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
 
   // Edit
   const editCatSave = (id, name, color) => { if (!name.trim()) return; setCat((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
