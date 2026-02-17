@@ -643,22 +643,27 @@ export default function App() {
     saveRef.current = setTimeout(() => saveToCloud(cats, tgs), 1500);
   }, [user, saveToCloud]);
 
-  // ─── Auto backup every hour ────────────────────────
+  // ─── Auto backup every 6 hours ──────────────────────
   const backupRef2 = useRef(null);
   const lastBackupRef = useRef(0);
   useEffect(() => {
-    if (!user || !initDone.current) return;
-    // Backup on first load
+    if (!user) return;
     const doBackup = () => {
+      if (!initDone.current) return;
       const now = Date.now();
-      if (now - lastBackupRef.current > 21600000) { // 6 hours
+      const lastKey = `task-timer-last-backup-${user.uid}`;
+      const stored = parseInt(localStorage.getItem(lastKey) || "0");
+      const lastTs = Math.max(lastBackupRef.current, stored);
+      if (now - lastTs > 21600000) { // 6 hours
         lastBackupRef.current = now;
+        try { localStorage.setItem(lastKey, String(now)); } catch (e) {}
         saveBackup(catsRef.current, tagsRef.current);
       }
     };
-    doBackup();
+    // Check after short delay to let init finish
+    const t = setTimeout(doBackup, 3000);
     backupRef2.current = setInterval(doBackup, 600000); // check every 10 min
-    return () => clearInterval(backupRef2.current);
+    return () => { clearTimeout(t); clearInterval(backupRef2.current); };
   }, [user, saveBackup]);
 
   const loadBackups = async () => {
@@ -834,14 +839,11 @@ export default function App() {
 
   // ─── Derived state ─────────────────────────────────
   const atd = timerView ? getTask(timerView) : null;
-  const totalToday = categories.reduce((s, c) => s + c.tasks.reduce((a, t) => {
-    const base = t.totalSeconds + (t.id === activeId ? elapsed : 0);
-    return a + base;
-  }, 0), 0);
   const todayTime = (task) => {
     const sessToday = task.sessions.filter(isToday).reduce((s, x) => s + x.duration, 0);
     return sessToday + (task.id === activeId ? elapsed : 0);
   };
+  const totalToday = categories.reduce((s, c) => s + c.tasks.reduce((a, t) => a + todayTime(t), 0), 0);
 
   if (authLoading) return (
     <div style={{ minHeight: "100dvh", backgroundColor: theme.bg, display: "flex", alignItems: "center", justifyContent: "center", color: theme.textSec, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
