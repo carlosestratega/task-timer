@@ -104,7 +104,7 @@ const defaultCategories = [
 
 const ensureTask = (t) => {
   const { currentSeconds, ...rest } = t; // strip currentSeconds from old data
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, ...rest };
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, ...rest };
 };
 
 const getWeekStart = () => {
@@ -854,7 +854,7 @@ export default function App() {
   // ─── Derived state ─────────────────────────────────
   const atd = timerView ? getTask(timerView) : null;
   const todayTime = (task) => {
-    const sessToday = task.sessions.filter(isToday).reduce((s, x) => s + x.duration, 0);
+    const sessToday = (task.sessions || []).filter(isToday).reduce((s, x) => s + x.duration, 0);
     return sessToday + (task.id === activeId ? elapsed : 0);
   };
   const totalToday = categories.reduce((s, c) => s + c.tasks.reduce((a, t) => a + todayTime(t), 0), 0);
