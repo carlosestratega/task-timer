@@ -78,6 +78,7 @@ const I = {
   user: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20,21v-2a4,4,0,0,0-4-4H8a4,4,0,0,0-4,4v2" /><circle cx="12" cy="7" r="4" /></svg>,
   check: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20,6 9,17 4,12" /></svg>,
   chart: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>,
+  move: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="5,9 2,12 5,15" /><polyline points="19,9 22,12 19,15" /><line x1="2" y1="12" x2="22" y2="12" /></svg>,
   back: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12,19 5,12 12,5" /></svg>,
   edit: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11,4H4A2,2,0,0,0,2,6V20a2,2,0,0,0,2,2H18a2,2,0,0,0,2-2V13" /><path d="M18.5,2.5a2.121,2.121,0,0,1,3,3L12,15,8,16l1-4Z" /></svg>,
   up: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18,15 12,9 6,15" /></svg>,
@@ -237,12 +238,22 @@ function ProfileMenu({ user, onLogin, onLogout, onBackups, syncing, theme, dk })
 }
 
 // ─── Modals ────────────────────────────────────────────
-function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel, theme, children }) {
+function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel, theme, children, options }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s" }} onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 24, maxWidth: 380, width: "100%" }}>
         <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>{title}</div>
         {message && <div style={{ fontSize: 14, color: theme.textSec, marginBottom: 16, lineHeight: 1.5 }}>{message}</div>}
+        {options && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+            {options.map((o, i) => (
+              <button key={i} onClick={o.onSelect} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer", textAlign: "left" }}>
+                <div style={{ width: 12, height: 12, borderRadius: 4, backgroundColor: o.color, flexShrink: 0 }} />
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
         {children}
         {onConfirm && (
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
@@ -812,6 +823,7 @@ export default function App() {
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
   const editTaskSave = (id, name, _c, goalDaily) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}) } : t) }))); setEditModal(null); };
+  const moveTaskToCat = (taskId, toCatId) => { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((t) => t.id === taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }; }); if (!task) return p; return without.map((c) => c.id === toCatId ? { ...c, tasks: [...c.tasks, task] } : c); }); setModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
   const addSubtask = (taskId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
@@ -1170,6 +1182,7 @@ export default function App() {
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
                           <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onSave: (n, _c, g) => editTaskSave(t.id, n, _c, g) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
+                          <button onClick={(e) => { e.stopPropagation(); const others = categories.filter((x) => x.id !== cat.id); if (others.length === 0) return; setModal({ title: "Mover tarea", message: `"${t.name}" a:`, options: others.map((o) => ({ label: o.name, color: o.color, onSelect: () => moveTaskToCat(t.id, o.id) })) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.move}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Completar?", message: `"${t.name}" → completadas.`, confirmLabel: "Completar", confirmColor: "#10b981", onConfirm: () => completeTask(t.id) }); }} style={{ background: "none", border: "none", color: "#10b981", cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.check}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Resetear?", message: `Borrar tiempo de "${t.name}".`, confirmLabel: "Resetear", confirmColor: "#f59e0b", onConfirm: () => resetTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.reset}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Eliminar?", message: `"${t.name}" permanentemente.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
