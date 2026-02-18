@@ -566,6 +566,7 @@ export default function App() {
   const [editingSubVal, setEditingSubVal] = useState("");
   const [editingTagIdx, setEditingTagIdx] = useState(null);
   const [editingTagVal, setEditingTagVal] = useState("");
+  const [showAllTags, setShowAllTags] = useState(false);
   const [editingTaskName, setEditingTaskName] = useState(false);
   const [editingTaskNameVal, setEditingTaskNameVal] = useState("");
   const [tags, setTags] = useState(loadTags);
@@ -939,54 +940,51 @@ export default function App() {
             )}
 
             {/* Tags */}
-            {isActive && (
-              <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
-                <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} Mientras tanto...</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {tags.map((tag, tgi) => (
-                    editingTagIdx === tgi ? (
-                      <div key={tag} style={{ display: "flex", gap: 4 }}>
-                        <input autoFocus value={editingTagVal} onChange={(e) => setEditingTagVal(e.target.value)} onBlur={() => { renameTag(tag, editingTagVal); setEditingTagIdx(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameTag(tag, editingTagVal); setEditingTagIdx(null); } if (e.key === "Escape") setEditingTagIdx(null); }} style={{ padding: "5px 10px", borderRadius: 16, border: `1px solid ${c.color}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", width: 120 }} />
-                      </div>
-                    ) : (
-                      <div key={tag} style={{ display: "flex", alignItems: "center", gap: 0, padding: "4px 4px 4px 12px", borderRadius: 20, border: activeTags.includes(tag) ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}15` : "transparent" }}>
-                        <span onClick={() => toggleActiveTag(tag)} style={{ fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, color: activeTags.includes(tag) ? c.color : theme.textSec, cursor: "pointer" }}>{tag}</span>
-                        <button onClick={() => { setEditingTagIdx(tgi); setEditingTagVal(tag); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.edit}</button>
-                        <button onClick={() => delTag(tag)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>
-                      </div>
-                    )
-                  ))}
+            {(() => {
+              // Sort tags by most recent use in this category
+              const catSessions = c.tasks.flatMap((tk) => (tk.sessions || []).filter((s) => s.tags && s.tags.length > 0));
+              const tagRecency = {};
+              catSessions.forEach((s) => { const ts = s.dateISO ? new Date(s.dateISO).getTime() : 0; (s.tags || []).forEach((tag) => { if (!tagRecency[tag] || ts > tagRecency[tag]) tagRecency[tag] = ts; }); });
+              const sorted = [...tags].sort((a, b) => (tagRecency[b] || 0) - (tagRecency[a] || 0));
+              // Active tags always shown first
+              const activeFirst = [...sorted.filter((t) => activeTags.includes(t)), ...sorted.filter((t) => !activeTags.includes(t))];
+              const visible = showAllTags ? activeFirst : activeFirst.slice(0, 4);
+              const hasMore = activeFirst.length > 4;
+
+              const renderTag = (tag) => {
+                const tgi = tags.indexOf(tag);
+                return editingTagIdx === tgi ? (
+                  <div key={tag} style={{ display: "flex", gap: 4 }}>
+                    <input autoFocus value={editingTagVal} onChange={(e) => setEditingTagVal(e.target.value)} onBlur={() => { renameTag(tag, editingTagVal); setEditingTagIdx(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameTag(tag, editingTagVal); setEditingTagIdx(null); } if (e.key === "Escape") setEditingTagIdx(null); }} style={{ padding: "5px 10px", borderRadius: 16, border: `1px solid ${c.color}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", width: 120 }} />
+                  </div>
+                ) : (
+                  <div key={tag} style={{ display: "flex", alignItems: "center", gap: 0, padding: "4px 4px 4px 12px", borderRadius: 20, border: activeTags.includes(tag) ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}15` : "transparent" }}>
+                    <span onClick={() => toggleActiveTag(tag)} style={{ fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, color: activeTags.includes(tag) ? c.color : theme.textSec, cursor: "pointer" }}>{tag}</span>
+                    {showAllTags && <button onClick={() => { setEditingTagIdx(tgi); setEditingTagVal(tag); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.edit}</button>}
+                    {showAllTags && <button onClick={() => delTag(tag)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>}
+                  </div>
+                );
+              };
+
+              return (
+                <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
+                  <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} {isActive ? "Mientras tanto..." : "Etiquetas"}</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {visible.map(renderTag)}
+                    {hasMore && !showAllTags && (
+                      <button onClick={() => setShowAllTags(true)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>+{activeFirst.length - 4} más</button>
+                    )}
+                    {hasMore && showAllTags && (
+                      <button onClick={() => setShowAllTags(false)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>Menos</button>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
+                    <button onClick={() => { if (newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} style={{ padding: "0 10px", borderRadius: 8, border: "none", backgroundColor: c.color, color: "#fff", fontSize: 12, fontWeight: 600 }}>+</button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                  <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
-                  <button onClick={() => { if (newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} style={{ padding: "0 10px", borderRadius: 8, border: "none", backgroundColor: c.color, color: "#fff", fontSize: 12, fontWeight: 600 }}>+</button>
-                </div>
-              </div>
-            )}
-            {!isActive && (
-              <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
-                <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} Etiquetas</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {tags.map((tag, tgi) => (
-                    editingTagIdx === tgi ? (
-                      <div key={tag} style={{ display: "flex", gap: 4 }}>
-                        <input autoFocus value={editingTagVal} onChange={(e) => setEditingTagVal(e.target.value)} onBlur={() => { renameTag(tag, editingTagVal); setEditingTagIdx(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameTag(tag, editingTagVal); setEditingTagIdx(null); } if (e.key === "Escape") setEditingTagIdx(null); }} style={{ padding: "5px 10px", borderRadius: 16, border: `1px solid ${c.color}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", width: 120 }} />
-                      </div>
-                    ) : (
-                      <div key={tag} style={{ display: "flex", alignItems: "center", gap: 0, padding: "4px 4px 4px 12px", borderRadius: 20, border: activeTags.includes(tag) ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}15` : "transparent" }}>
-                        <span onClick={() => toggleActiveTag(tag)} style={{ fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, color: activeTags.includes(tag) ? c.color : theme.textSec, cursor: "pointer" }}>{tag}</span>
-                        <button onClick={() => { setEditingTagIdx(tgi); setEditingTagVal(tag); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.edit}</button>
-                        <button onClick={() => delTag(tag)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>
-                      </div>
-                    )
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                  <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} placeholder="Nueva etiqueta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
-                  <button onClick={() => { if (newTagName.trim()) { addTag(newTagName); setNewTagName(""); } }} style={{ padding: "0 10px", borderRadius: 8, border: "none", backgroundColor: c.color, color: "#fff", fontSize: 12, fontWeight: 600 }}>+</button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Stats */}
             <div style={{ marginTop: 28, display: "flex", gap: 32, color: theme.textSec, fontSize: 14 }}>
