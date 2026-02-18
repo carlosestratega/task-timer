@@ -386,10 +386,11 @@ function SubtaskInput({ taskId, onAdd, theme }) {
 
 // ─── Stats View ────────────────────────────────────────
 function StatsView({ categories, theme, dk, onClose }) {
-  const [period, setPeriod] = useState("week");
+  const [period, setPeriod] = useState("today");
   const [filter, setFilter] = useState("all");
-  const periods = [{ key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "14days", label: "14 días" }, { key: "month", label: "Mes" }, { key: "all", label: "Total" }];
-  const filterS = (s) => { if (period === "today") return isToday(s); if (period === "week") return isThisWeek(s); if (period === "14days") return isWithinDays(s, 14); if (period === "month") return isWithinDays(s, 30); return true; };
+  const periods = [{ key: "yesterday", label: "Ayer" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "14days", label: "14 días" }, { key: "month", label: "Mes" }, { key: "all", label: "Total" }];
+  const isYesterday = (s) => { const y = new Date(); y.setDate(y.getDate() - 1); return getDateStr(parseSessionDate(s)) === getDateStr(y); };
+  const filterS = (s) => { if (period === "today") return isToday(s); if (period === "yesterday") return isYesterday(s); if (period === "week") return isThisWeek(s); if (period === "14days") return isWithinDays(s, 14); if (period === "month") return isWithinDays(s, 30); return true; };
   const allTasks = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const fTasks = filter === "all" ? allTasks : allTasks.filter((t) => t.catId === filter);
   const tStats = fTasks.map((t) => { const fs = t.sessions.filter(filterS); return { ...t, fSess: fs, pTime: fs.reduce((a, x) => a + x.duration, 0) }; }).filter((t) => t.pTime > 0 || t.sessions.length > 0).sort((a, b) => b.pTime - a.pTime);
@@ -397,10 +398,11 @@ function StatsView({ categories, theme, dk, onClose }) {
   const catStats = categories.map((c) => ({ ...c, pTime: allTasks.filter((t) => t.catId === c.id).reduce((a, t) => a + t.sessions.filter(filterS).reduce((s, x) => s + x.duration, 0), 0) })).filter((c) => c.pTime > 0).sort((a, b) => b.pTime - a.pTime);
   const maxT = Math.max(...tStats.map((t) => t.pTime), 1);
   const maxC = Math.max(...catStats.map((c) => c.pTime), 1);
-  const days = period === "today" ? 1 : period === "week" ? 7 : period === "14days" ? 14 : 30;
+  const days = period === "today" ? 1 : period === "yesterday" ? 1 : period === "week" ? 7 : period === "14days" ? 14 : 30;
   const now = new Date();
   const daily = [];
-  for (let i = days - 1; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate() - i); const ds = getDateStr(d); let tot = 0; fTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) tot += s.duration; })); daily.push({ ds, label: d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }), tot }); }
+  const dayOffset = period === "yesterday" ? 1 : 0;
+  for (let i = days - 1; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate() - i - dayOffset); const ds = getDateStr(d); let tot = 0; fTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) tot += s.duration; })); daily.push({ ds, label: d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }), tot }); }
   const maxD = Math.max(...daily.map((d) => d.tot), 1);
   const getStreak = () => { let streak = 0; const d = new Date(); for (let i = 0; i < 365; i++) { const ds = getDateStr(d); let dt = 0; allTasks.forEach((t) => t.sessions.forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dt += s.duration; })); if (dt > 0) streak++; else if (i > 0) break; d.setDate(d.getDate() - 1); } return streak; };
   const daysWithData = daily.filter((d) => d.tot > 0).length;
