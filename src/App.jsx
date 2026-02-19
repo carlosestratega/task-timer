@@ -462,6 +462,177 @@ function StatsView({ categories, theme, dk, onClose }) {
           {catStats.map((c) => (<div key={c.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c.color }} /><span style={{ fontSize: 15, fontWeight: 500 }}>{c.name}</span></div><span style={{ fontSize: 14, fontWeight: 600, color: c.color }}>{fmtShort(c.pTime)}</span></div><div style={{ height: 6, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(c.pTime / maxC) * 100}%`, backgroundColor: c.color, borderRadius: 3 }} /></div></div>))}
         </div>)}
         {/* Mood analysis */}
+        {/* ── Circular Charts ── */}
+        {(period === "today" || period === "yesterday") && (() => {
+          // Daily clock: 24h donut with category colors per hour
+          const targetDate = period === "yesterday" ? (() => { const y = new Date(); y.setDate(y.getDate() - 1); return getDateStr(y); })() : getDateStr();
+          // Collect all sessions for target date with category info
+          const hourBuckets = Array.from({ length: 24 }, () => ({})); // {catId: seconds}
+          categories.forEach((cat) => {
+            cat.tasks.forEach((task) => {
+              (task.sessions || []).forEach((s) => {
+                if (!s.dateISO || !s.duration) return;
+                const sessDate = getDateStr(new Date(s.dateISO));
+                if (sessDate !== targetDate) return;
+                const endDate = new Date(s.dateISO);
+                const startDate = new Date(endDate.getTime() - s.duration * 1000);
+                // Fill each hour bucket
+                for (let h = 0; h < 24; h++) {
+                  const hStart = new Date(endDate); hStart.setHours(h, 0, 0, 0);
+                  if (hStart.toDateString() !== endDate.toDateString()) { const tmp = new Date(startDate); hStart.setFullYear(tmp.getFullYear()); hStart.setMonth(tmp.getMonth()); hStart.setDate(tmp.getDate()); hStart.setHours(h, 0, 0, 0); }
+                  const bucketDate = new Date(targetDate + "T00:00:00"); bucketDate.setHours(h, 0, 0, 0);
+                  const hEnd = new Date(bucketDate.getTime() + 3600000);
+                  const overlapStart = Math.max(startDate.getTime(), bucketDate.getTime());
+                  const overlapEnd = Math.min(endDate.getTime(), hEnd.getTime());
+                  if (overlapEnd > overlapStart) {
+                    const secs = (overlapEnd - overlapStart) / 1000;
+                    hourBuckets[h][cat.id] = (hourBuckets[h][cat.id] || 0) + secs;
+                  }
+                }
+              });
+            });
+          });
+          const catColorMap = {}; categories.forEach((c) => { catColorMap[c.id] = c.color; });
+          const catNameMap = {}; categories.forEach((c) => { catNameMap[c.id] = c.name; });
+          // Build SVG arcs
+          const cx = 100, cy = 100, R = 85, r = 55;
+          const segAngle = (2 * Math.PI) / 24;
+          const clockArcs = [];
+          for (let h = 0; h < 24; h++) {
+            const angle0 = -Math.PI / 2 + h * segAngle;
+            const bucket = hourBuckets[h];
+            const totalSecs = Object.values(bucket).reduce((a, v) => a + v, 0);
+            if (totalSecs === 0) {
+              // Empty hour - gray
+              const gap = 0.008;
+              const a0 = angle0 + gap, a1 = angle0 + segAngle - gap;
+              const path = `M${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)} L${cx + R * Math.cos(a0)},${cy + R * Math.sin(a0)} A${R},${R},0,0,1,${cx + R * Math.cos(a1)},${cy + R * Math.sin(a1)} L${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)} A${r},${r},0,0,0,${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)}Z`;
+              clockArcs.push(<path key={`e-${h}`} d={path} fill={dk ? "#1a1a1a" : "#e8e8e8"} />);
+            } else {
+              // Split proportionally by category
+              const entries = Object.entries(bucket).sort((a, b) => b[1] - a[1]);
+              let offset = 0;
+              entries.forEach(([catId, secs], ei) => {
+                const frac = secs / 3600;
+                const gap = 0.008;
+                const a0 = angle0 + gap + offset * (segAngle - 2 * gap);
+                const a1 = a0 + frac * (segAngle - 2 * gap);
+                offset += frac;
+                const largeArc = (a1 - a0) > Math.PI ? 1 : 0;
+                const path = `M${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)} L${cx + R * Math.cos(a0)},${cy + R * Math.sin(a0)} A${R},${R},0,${largeArc},1,${cx + R * Math.cos(a1)},${cy + R * Math.sin(a1)} L${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)} A${r},${r},0,${largeArc},0,${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)}Z`;
+                clockArcs.push(<path key={`s-${h}-${ei}`} d={path} fill={catColorMap[catId] || "#888"} opacity={0.85} />);
+              });
+              // Fill remaining fraction as gray if < 3600s
+              if (totalSecs < 3600) {
+                const frac = (3600 - totalSecs) / 3600;
+                const gap = 0.008;
+                const a0 = angle0 + gap + offset * (segAngle - 2 * gap);
+                const a1 = angle0 + segAngle - gap;
+                if (a1 > a0 + 0.001) {
+                  const largeArc = (a1 - a0) > Math.PI ? 1 : 0;
+                  const path = `M${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)} L${cx + R * Math.cos(a0)},${cy + R * Math.sin(a0)} A${R},${R},0,${largeArc},1,${cx + R * Math.cos(a1)},${cy + R * Math.sin(a1)} L${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)} A${r},${r},0,${largeArc},0,${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)}Z`;
+                  clockArcs.push(<path key={`g-${h}`} d={path} fill={dk ? "#1a1a1a" : "#e8e8e8"} />);
+                }
+              }
+            }
+          }
+          // Hour labels
+          const hourLabels = [0, 3, 6, 9, 12, 15, 18, 21].map((h) => {
+            const angle = -Math.PI / 2 + h * segAngle + segAngle / 2;
+            const lR = R + 13;
+            return <text key={`l-${h}`} x={cx + lR * Math.cos(angle)} y={cy + lR * Math.sin(angle)} textAnchor="middle" dominantBaseline="central" fill={theme.textSec} fontSize="9" fontWeight="500">{h}</text>;
+          });
+          // Legend
+          const usedCats = {}; hourBuckets.forEach((b) => Object.entries(b).forEach(([id, s]) => { usedCats[id] = (usedCats[id] || 0) + s; }));
+          const legendItems = Object.entries(usedCats).sort((a, b) => b[1] - a[1]);
+          const totalTracked = legendItems.reduce((a, [, s]) => a + s, 0);
+
+          return (
+            <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Reloj del día</div>
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <svg viewBox="0 0 200 200" width="220" height="220">
+                  {clockArcs}
+                  {hourLabels}
+                  <text x={cx} y={cy - 6} textAnchor="middle" fill={theme.text} fontSize="16" fontWeight="700">{fmtShort(Math.round(totalTracked))}</text>
+                  <text x={cx} y={cy + 10} textAnchor="middle" fill={theme.textSec} fontSize="9">registrado</text>
+                </svg>
+              </div>
+              {legendItems.length > 0 && (
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 12 }}>
+                  {legendItems.map(([id, secs]) => (
+                    <div key={id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: theme.textSec }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: catColorMap[id] }} />
+                      <span>{catNameMap[id]}</span>
+                      <span style={{ fontWeight: 600, color: theme.text }}>{fmtShort(Math.round(secs))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+        {period === "week" && (() => {
+          // Weekly donut: 168h total, categories + sin actividad
+          const WEEK_SECS = 168 * 3600;
+          const catTotals = categories.map((cat) => {
+            const secs = cat.tasks.reduce((a, task) => a + (task.sessions || []).filter(isThisWeek).reduce((s, x) => s + x.duration, 0), 0);
+            return { id: cat.id, name: cat.name, color: cat.color, secs };
+          }).filter((c) => c.secs > 0).sort((a, b) => b.secs - a.secs);
+          const totalTracked = catTotals.reduce((a, c) => a + c.secs, 0);
+          const untracked = WEEK_SECS - totalTracked;
+          const slices = [...catTotals, { id: "_free", name: "Sin actividad", color: dk ? "#1a1a1a" : "#ddd", secs: untracked }];
+          // Build donut
+          const cx = 100, cy = 100, R = 85, r = 55;
+          let cumAngle = -Math.PI / 2;
+          const donutArcs = slices.map((sl, si) => {
+            const frac = sl.secs / WEEK_SECS;
+            if (frac < 0.001) return null;
+            const sweep = frac * 2 * Math.PI;
+            const a0 = cumAngle + 0.005;
+            const a1 = cumAngle + sweep - 0.005;
+            cumAngle += sweep;
+            const largeArc = (a1 - a0) > Math.PI ? 1 : 0;
+            const path = `M${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)} L${cx + R * Math.cos(a0)},${cy + R * Math.sin(a0)} A${R},${R},0,${largeArc},1,${cx + R * Math.cos(a1)},${cy + R * Math.sin(a1)} L${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)} A${r},${r},0,${largeArc},0,${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)}Z`;
+            return <path key={si} d={path} fill={sl.color} opacity={sl.id === "_free" ? 0.5 : 0.85} />;
+          });
+          const pct = Math.round((totalTracked / WEEK_SECS) * 100);
+
+          return (
+            <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Distribución semanal</div>
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <svg viewBox="0 0 200 200" width="220" height="220">
+                  {donutArcs}
+                  <text x={cx} y={cy - 6} textAnchor="middle" fill={theme.text} fontSize="16" fontWeight="700">{fmtShort(totalTracked)}</text>
+                  <text x={cx} y={cy + 10} textAnchor="middle" fill={theme.textSec} fontSize="9">{pct}% de 168h</text>
+                </svg>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                {catTotals.map((c) => (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c.color }} />
+                      <span style={{ color: theme.text }}>{c.name}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontWeight: 600, color: c.color }}>{fmtShort(c.secs)}</span>
+                      <span style={{ color: theme.textSec, fontSize: 11 }}>{Math.round((c.secs / WEEK_SECS) * 100)}%</span>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, opacity: 0.5 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: dk ? "#1a1a1a" : "#ddd" }} />
+                    <span style={{ color: theme.textSec }}>Sin actividad</span>
+                  </div>
+                  <span style={{ color: theme.textSec }}>{fmtShort(untracked)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+        {/* Mood analysis */}
         {(() => {
           const MOODS = ["😫", "😕", "😐", "🙂", "🔥"];
           const moodSessions = fTasks.flatMap((t) => t.sessions.filter(filterS).filter((s) => s.mood).map((s) => ({ ...s, taskName: t.name, catName: t.catName, catColor: t.catColor })));
