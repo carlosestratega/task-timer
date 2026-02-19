@@ -546,6 +546,9 @@ function StatsView({ categories, theme, dk, onClose }) {
           const usedCats = {}; hourBuckets.forEach((b) => Object.entries(b).forEach(([id, s]) => { usedCats[id] = (usedCats[id] || 0) + s; }));
           const legendItems = Object.entries(usedCats).sort((a, b) => b[1] - a[1]);
           const totalTracked = legendItems.reduce((a, [, s]) => a + s, 0);
+          // Base for percentages: today = elapsed so far, yesterday = 24h
+          const baseSecs = period === "yesterday" ? 86400 : (() => { const n = new Date(); return n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds(); })();
+          const untracked = Math.max(0, baseSecs - totalTracked);
 
           return (
             <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
@@ -555,20 +558,33 @@ function StatsView({ categories, theme, dk, onClose }) {
                   {clockArcs}
                   {hourLabels}
                   <text x={cx} y={cy - 6} textAnchor="middle" fill={theme.text} fontSize="16" fontWeight="700">{fmtShort(Math.round(totalTracked))}</text>
-                  <text x={cx} y={cy + 10} textAnchor="middle" fill={theme.textSec} fontSize="9">registrado</text>
+                  <text x={cx} y={cy + 10} textAnchor="middle" fill={theme.textSec} fontSize="9">{baseSecs > 0 ? Math.round((totalTracked / baseSecs) * 100) : 0}% de {fmtShort(baseSecs)}</text>
                 </svg>
               </div>
-              {legendItems.length > 0 && (
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 12 }}>
-                  {legendItems.map(([id, secs]) => (
-                    <div key={id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: theme.textSec }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                {legendItems.map(([id, secs]) => (
+                  <div key={id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: catColorMap[id] }} />
-                      <span>{catNameMap[id]}</span>
-                      <span style={{ fontWeight: 600, color: theme.text }}>{fmtShort(Math.round(secs))}</span>
+                      <span style={{ color: theme.text }}>{catNameMap[id]}</span>
                     </div>
-                  ))}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontWeight: 600, color: catColorMap[id] }}>{fmtShort(Math.round(secs))}</span>
+                      <span style={{ color: theme.textSec, fontSize: 11 }}>{baseSecs > 0 ? Math.round((secs / baseSecs) * 100) : 0}%</span>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, opacity: 0.5 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: dk ? "#1a1a1a" : "#ddd" }} />
+                    <span style={{ color: theme.textSec }}>Sin registro</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: theme.textSec }}>{fmtShort(Math.round(untracked))}</span>
+                    <span style={{ color: theme.textSec, fontSize: 11 }}>{baseSecs > 0 ? Math.round((untracked / baseSecs) * 100) : 0}%</span>
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           );
         })()}
