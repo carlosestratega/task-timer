@@ -734,7 +734,7 @@ export default function App() {
     const l = loadLocal();
     return l ? l.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) })) : defaultCategories;
   });
-  const [expanded, setExpanded] = useState(() => new Set(categories.map((c) => c.id)));
+  const [expanded, setExpanded] = useState(() => new Set());
   const [activeId, setActiveId] = useState(null); // ID of running task
   const [elapsed, setElapsed] = useState(0); // display-only seconds counter
   const [showNewCat, setShowNewCat] = useState(false);
@@ -800,14 +800,14 @@ export default function App() {
       }
       // Always load from cloud (source of truth)
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
-      setCat(cats); saveLocal(cats); setExpanded(new Set(cats.map((c) => c.id)));
+      setCat(cats); saveLocal(cats); 
       if (data.tags) { setTags(data.tags); saveTags(data.tags); }
-      // Resume any running timer from cloud
+      // Resume any running timer from cloud, expand only its category
       for (const c of cats) {
         for (const t of c.tasks) {
           if (t.isRunning && t.startedAt) {
             const el = calcElapsed(t.startedAt);
-            if (el > 0 && el < 86400) { setActiveId(t.id); setElapsed(el); }
+            if (el > 0 && el < 86400) { setActiveId(t.id); setElapsed(el); setExpanded(new Set([c.id])); }
             else { setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === t.id ? { ...tk, isRunning: false, startedAt: null } : tk) }))); }
             return;
           }
@@ -878,7 +878,7 @@ export default function App() {
     if (data) {
       if (activeId) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); }
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
-      setCat(cats); saveLocal(cats); setExpanded(new Set(cats.map((c) => c.id)));
+      setCat(cats); saveLocal(cats); 
       if (data.tags) { setTags(data.tags); saveTags(data.tags); }
       saveToCloud(cats, data.tags || tags);
       setShowBackups(false);
