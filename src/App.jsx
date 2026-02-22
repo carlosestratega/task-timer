@@ -648,6 +648,43 @@ function StatsView({ categories, theme, dk, onClose }) {
             </div>
           );
         })()}
+        <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por tarea</div>
+          {tStats.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec, fontSize: 14 }}>Sin datos</div>}
+          {tStats.map((t) => { const moodSess = t.fSess.filter((s) => s.mood); const avgM = moodSess.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moodSess.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moodSess.length)] : null; return (<div key={t.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div><div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}><div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.{avgM && <span> · {avgM}</span>}{t.completed && <span style={{ color: "#10b981" }}> ✓</span>}{t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}</div></div><span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span></div><div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7 }} /></div></div>); })}
+        </div>
+        {/* Tag time stats */}
+        {(() => {
+          const tagTime = {};
+          fTasks.forEach((t) => {
+            (t.sessions || []).filter(filterS).forEach((s) => {
+              (s.tags || []).forEach((tag) => { tagTime[tag] = (tagTime[tag] || 0) + s.duration; });
+            });
+          });
+          const tagArr = Object.entries(tagTime).sort((a, b) => b[1] - a[1]);
+          if (tagArr.length === 0) return null;
+          const maxTag = tagArr[0][1];
+          const totalTagTime = tagArr.reduce((a, [, s]) => a + s, 0);
+          return (
+            <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Mientras tanto</div>
+              {tagArr.map(([tag, secs]) => (
+                <div key={tag} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{tag}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: theme.accent }}>{fmtShort(secs)}</span>
+                      <span style={{ fontSize: 11, color: theme.textSec }}>{totalTagTime > 0 ? Math.round((secs / totalTagTime) * 100) : 0}%</span>
+                    </div>
+                  </div>
+                  <div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(secs / maxTag) * 100}%`, backgroundColor: theme.accent, borderRadius: 3, opacity: 0.6 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {/* Mood analysis */}
         {(() => {
           const MOODS = ["😫", "😕", "😐", "🙂", "🔥"];
@@ -656,17 +693,15 @@ function StatsView({ categories, theme, dk, onClose }) {
           const moodCounts = MOODS.map((m) => ({ mood: m, count: moodSessions.filter((s) => s.mood === m).length, totalTime: moodSessions.filter((s) => s.mood === m).reduce((a, s) => a + s.duration, 0) }));
           const maxCount = Math.max(...moodCounts.map((m) => m.count), 1);
           const avgMood = moodSessions.reduce((a, s) => a + MOODS.indexOf(s.mood), 0) / moodSessions.length;
-          // Best/worst tasks by mood (min 3 sessions)
           const taskMoods = {};
           fTasks.forEach((t) => { const ms = t.sessions.filter(filterS).filter((s) => s.mood); if (ms.length >= 3) { const avg = ms.reduce((a, s) => a + MOODS.indexOf(s.mood), 0) / ms.length; taskMoods[t.name] = { avg, count: ms.length, catColor: t.catColor }; } });
           const taskMoodArr = Object.entries(taskMoods).sort((a, b) => b[1].avg - a[1].avg);
-          // Tag moods (min 3 sessions)
           const tagMoods = {};
           moodSessions.forEach((s) => { (s.tags || []).forEach((tag) => { if (!tagMoods[tag]) tagMoods[tag] = []; tagMoods[tag].push(MOODS.indexOf(s.mood)); }); });
           const tagMoodArr = Object.entries(tagMoods).filter(([, v]) => v.length >= 3).map(([tag, vals]) => ({ tag, avg: vals.reduce((a, b) => a + b, 0) / vals.length, count: vals.length })).sort((a, b) => b.avg - a.avg);
 
           return (
-            <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+            <div style={{ padding: "20px 0" }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Estado de ánimo</div>
               <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 16 }}>
                 {moodCounts.map((m) => (
@@ -715,11 +750,7 @@ function StatsView({ categories, theme, dk, onClose }) {
             </div>
           );
         })()}
-        <div style={{ padding: "20px 0 100px" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Por tarea</div>
-          {tStats.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec, fontSize: 14 }}>Sin datos</div>}
-          {tStats.map((t) => { const moodSess = t.fSess.filter((s) => s.mood); const avgM = moodSess.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moodSess.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moodSess.length)] : null; return (<div key={t.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div><div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}><div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.{avgM && <span> · {avgM}</span>}{t.completed && <span style={{ color: "#10b981" }}> ✓</span>}{t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}</div></div><span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span></div><div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7 }} /></div></div>); })}
-        </div>
+        <div style={{ height: 80 }} />
       </div>
     </div>
   );
