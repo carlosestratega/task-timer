@@ -151,7 +151,7 @@ function useCloudSync(user) {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
       const now = new Date().toISOString();
       lastSaveTs.current = new Date(now).getTime();
-      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: tgs || [], updatedAt: now, _device: DEVICE_ID });
+      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []), updatedAt: now, _device: DEVICE_ID });
     } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
   }, [user]);
@@ -172,7 +172,7 @@ function useCloudSync(user) {
       const now = new Date();
       const id = now.toISOString().replace(/[:.]/g, "-");
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
-      await setDoc(doc(backupRef, id), { categories: clean, tags: tgs || [], createdAt: now.toISOString() });
+      await setDoc(doc(backupRef, id), { categories: clean, tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []), createdAt: now.toISOString() });
       // Keep max 24 backups
       const q2 = query(backupRef, orderBy("createdAt", "desc"));
       const snaps = await getDocs(q2);
@@ -832,7 +832,14 @@ export default function App() {
       // Always load from cloud (source of truth)
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats); 
-      if (data.tags) { setTags(data.tags); saveTags(data.tags); }
+      // Recover tags: prefer cloud → localStorage → extract from sessions
+      let resolvedTags = data.tags && data.tags.length > 0 ? data.tags : tagsRef.current;
+      if (!resolvedTags || resolvedTags.length === 0) {
+        const fromSessions = new Set();
+        cats.forEach((c) => c.tasks.forEach((t) => (t.sessions || []).forEach((s) => (s.tags || []).forEach((tag) => fromSessions.add(tag)))));
+        if (fromSessions.size > 0) resolvedTags = [...fromSessions];
+      }
+      if (resolvedTags && resolvedTags.length > 0) { setTags(resolvedTags); saveTags(resolvedTags); saveToCloud(cats, resolvedTags); }
       // Resume any running timer from cloud, expand only its category
       for (const c of cats) {
         for (const t of c.tasks) {
@@ -853,7 +860,7 @@ export default function App() {
       if (!initDone.current) return;
       const cats = (data.categories || []).map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats);
-      if (data.tags) { setTags(data.tags); saveTags(data.tags); }
+      if (data.tags && data.tags.length > 0) { setTags(data.tags); saveTags(data.tags); }
       // Check if remote stopped/started a timer
       let remoteRunning = null;
       for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) { remoteRunning = t; break; } } if (remoteRunning) break; }
@@ -910,8 +917,15 @@ export default function App() {
       if (activeId) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); }
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats); 
-      if (data.tags) { setTags(data.tags); saveTags(data.tags); }
-      saveToCloud(cats, data.tags || tags);
+      // Recover tags: backup → current → extract from sessions
+      let restoredTags = data.tags && data.tags.length > 0 ? data.tags : tagsRef.current;
+      if (!restoredTags || restoredTags.length === 0) {
+        const fromSessions = new Set();
+        cats.forEach((c) => c.tasks.forEach((t) => (t.sessions || []).forEach((s) => (s.tags || []).forEach((tag) => fromSessions.add(tag)))));
+        if (fromSessions.size > 0) restoredTags = [...fromSessions];
+      }
+      if (restoredTags && restoredTags.length > 0) { setTags(restoredTags); saveTags(restoredTags); }
+      saveToCloud(cats, restoredTags || []);
       setShowBackups(false);
       setTimerView(null);
     }
@@ -1112,7 +1126,7 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 600 }}>{d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" })} · {d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</div>
-                      <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3 }}>{cats.length} cat. · {totalTasks} tareas · {totalSess} sesiones</div>
+                      <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3 }}>{cats.length} cat. · {totalTasks} tareas · {totalSess} sesiones · {(b.tags || []).length} etiq.</div>
                     </div>
                     <button onClick={() => setModal({ title: "¿Restaurar backup?", message: `Del ${d.toLocaleDateString("es-ES")} a las ${d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}. Reemplazará todos tus datos actuales.`, confirmLabel: "Restaurar", confirmColor: "#6366f1", onConfirm: () => { doRestore(b); setModal(null); } })} style={{ padding: "8px 16px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>Restaurar</button>
                   </div>
@@ -1186,9 +1200,9 @@ export default function App() {
               };
 
               return (
-                <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
-                  <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} {isActive ? "Mientras tanto..." : "Etiquetas"}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ marginTop: 24, width: "90%", maxWidth: 320, margin: "24px auto 0" }}>
+                  <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>{I.tag} {isActive ? "Mientras tanto..." : "Etiquetas"}</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
                     {visible.map(renderTag)}
                     {hasMore && !showAllTags && (
                       <button onClick={() => setShowAllTags(true)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>+{activeFirst.length - TAG_LIMIT} más</button>
