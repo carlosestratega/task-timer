@@ -1166,8 +1166,9 @@ export default function App() {
               const sorted = [...tags].sort((a, b) => (tagRecency[b] || 0) - (tagRecency[a] || 0));
               // Active tags always shown first
               const activeFirst = [...sorted.filter((t) => activeTags.includes(t)), ...sorted.filter((t) => !activeTags.includes(t))];
-              const visible = showAllTags ? activeFirst : activeFirst.slice(0, 6);
-              const hasMore = activeFirst.length > 6;
+              const TAG_LIMIT = 6;
+              const visible = showAllTags ? activeFirst : activeFirst.slice(0, TAG_LIMIT);
+              const hasMore = activeFirst.length > TAG_LIMIT;
 
               const renderTag = (tag) => {
                 const tgi = tags.indexOf(tag);
@@ -1190,7 +1191,7 @@ export default function App() {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {visible.map(renderTag)}
                     {hasMore && !showAllTags && (
-                      <button onClick={() => setShowAllTags(true)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>+{activeFirst.length - 6} más</button>
+                      <button onClick={() => setShowAllTags(true)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>+{activeFirst.length - TAG_LIMIT} más</button>
                     )}
                     {hasMore && showAllTags && (
                       <button onClick={() => setShowAllTags(false)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>Menos</button>
