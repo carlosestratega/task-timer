@@ -56,7 +56,7 @@ const loadTheme = () => { try { const r = localStorage.getItem(THEME_KEY); if (r
 const saveLocal = (c) => { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(c)); } catch (e) {} };
 const loadLocal = () => { try { const r = localStorage.getItem(LOCAL_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; };
 const saveTags = (t) => { try { localStorage.setItem(TAGS_KEY, JSON.stringify(t)); } catch (e) {} };
-const loadTags = () => { try { const r = localStorage.getItem(TAGS_KEY); if (r) return JSON.parse(r); } catch (e) {} return ["Podcast", "Música", "Llamada", "Reunión"]; };
+const loadTags = () => { try { const r = localStorage.getItem(TAGS_KEY); if (r) return JSON.parse(r); } catch (e) {} return []; };
 
 // ─── Icons ─────────────────────────────────────────────
 const I = {
@@ -832,14 +832,13 @@ export default function App() {
       // Always load from cloud (source of truth)
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats); 
-      // Recover tags: prefer cloud → localStorage → extract from sessions
-      let resolvedTags = data.tags && data.tags.length > 0 ? data.tags : tagsRef.current;
-      if (!resolvedTags || resolvedTags.length === 0) {
-        const fromSessions = new Set();
-        cats.forEach((c) => c.tasks.forEach((t) => (t.sessions || []).forEach((s) => (s.tags || []).forEach((tag) => fromSessions.add(tag)))));
-        if (fromSessions.size > 0) resolvedTags = [...fromSessions];
-      }
-      if (resolvedTags && resolvedTags.length > 0) { setTags(resolvedTags); saveTags(resolvedTags); saveToCloud(cats, resolvedTags); }
+      // Recover tags: merge cloud + local + extracted from sessions
+      const cloudTags = data.tags && data.tags.length > 0 ? data.tags : [];
+      const localTags = tagsRef.current || [];
+      const fromSessions = new Set();
+      cats.forEach((c) => c.tasks.forEach((t) => (t.sessions || []).forEach((s) => (s.tags || []).forEach((tag) => fromSessions.add(tag)))));
+      const merged = [...new Set([...cloudTags, ...localTags, ...fromSessions])];
+      if (merged.length > 0) { setTags(merged); saveTags(merged); if (merged.length !== cloudTags.length) saveToCloud(cats, merged); }
       // Resume any running timer from cloud, expand only its category
       for (const c of cats) {
         for (const t of c.tasks) {
