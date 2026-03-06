@@ -685,6 +685,36 @@ function StatsView({ categories, theme, dk, onClose }) {
           {tStats.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec, fontSize: 14 }}>Sin datos</div>}
           {tStats.map((t) => { const moodSess = t.fSess.filter((s) => s.mood); const avgM = moodSess.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moodSess.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moodSess.length)] : null; return (<div key={t.id} style={{ marginBottom: 14 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div><div style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}><div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor }} />{t.catName} · {t.fSess.length} ses.{avgM && <span> · {avgM}</span>}{t.completed && <span style={{ color: "#10b981" }}> ✓</span>}{t.goalDaily > 0 && <span style={{ color: "#6366f1" }}> · Meta: {Math.round(t.goalDaily / 60)}m/día</span>}</div></div><span style={{ fontSize: 15, fontWeight: 600, color: t.catColor, flexShrink: 0, marginLeft: 12 }}>{fmtShort(t.pTime)}</span></div><div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${(t.pTime / maxT) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.7 }} /></div></div>); })}
         </div>
+        {/* Session frequency */}
+        {(() => {
+          const freqStats = tStats.filter((t) => t.fSess.length > 0).sort((a, b) => b.fSess.length - a.fSess.length);
+          if (freqStats.length === 0) return null;
+          const maxSess = freqStats[0].fSess.length;
+          const totalSess = freqStats.reduce((a, t) => a + t.fSess.length, 0);
+          return (
+            <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Frecuencia</div>
+              <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 16 }}>{totalSess} sesiones en {periods.find((p) => p.key === period)?.label.toLowerCase()}</div>
+              {freqStats.map((t) => (
+                <div key={t.id} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: t.catColor, flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: t.catColor }}>{t.fSess.length}</span>
+                      <span style={{ fontSize: 11, color: theme.textSec }}>{totalSess > 0 ? Math.round((t.fSess.length / totalSess) * 100) : 0}%</span>
+                    </div>
+                  </div>
+                  <div style={{ height: 5, backgroundColor: dk ? "#1c1c1c" : "#eee", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(t.fSess.length / maxSess) * 100}%`, backgroundColor: t.catColor, borderRadius: 3, opacity: 0.6 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {/* Tag time stats */}
         {(() => {
           const tagTime = {};
