@@ -325,6 +325,17 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
     return "";
   })();
   const [startTime, setStartTime] = useState(initStartTime);
+  const recalcFromTimes = (st, et) => {
+    if (!st || !et) return;
+    const [sh, sm] = st.split(":").map(Number);
+    const [eh, em] = et.split(":").map(Number);
+    let diff = (eh * 60 + em) - (sh * 60 + sm);
+    if (diff < 0) diff += 1440; // crosses midnight
+    const totalSecs = diff * 60;
+    setHours(Math.floor(totalSecs / 3600));
+    setMins(Math.floor((totalSecs % 3600) / 60));
+    setSecs(0);
+  };
   // Parse date from dateISO or date string
   const initDate = (() => {
     if (session.dateISO) { const d = new Date(session.dateISO); return d.toISOString().slice(0, 10); }
@@ -345,12 +356,12 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Horario</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div style={{ flex: 1 }}>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} onBlur={() => recalcFromTimes(startTime, endTime)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
               <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>Inicio</div>
             </div>
             <span style={{ fontSize: 16, color: theme.textSec }}>→</span>
             <div style={{ flex: 1 }}>
-              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} onBlur={() => recalcFromTimes(startTime, endTime)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
               <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>Fin</div>
             </div>
           </div>
