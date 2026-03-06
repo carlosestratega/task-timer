@@ -345,6 +345,16 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
   const [dateVal, setDateVal] = useState(initDate);
   const newDuration = Math.max(0, hours * 3600 + mins * 60 + secs);
   const toggleTag = (t) => setSessTags((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t]);
+  const recalcStart = (h, m, s) => {
+    if (!endTime) return;
+    const [eh, em] = endTime.split(":").map(Number);
+    const endMins = eh * 60 + em;
+    const durMins = h * 60 + m + (s > 0 ? 1 : 0);
+    const startMins = ((endMins - durMins) % 1440 + 1440) % 1440;
+    const sh = Math.floor(startMins / 60);
+    const sm = startMins % 60;
+    setStartTime(`${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`);
+  };
   return (
     <Modal title="Editar sesión" onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -370,17 +380,17 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Duración</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div style={{ flex: 1 }}>
-              <input type="number" value={hours} onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))} min="0" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
+              <input type="number" value={hours} onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))} onBlur={() => recalcStart(hours, mins, secs)} min="0" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
               <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>horas</div>
             </div>
             <span style={{ fontSize: 20, color: theme.textSec, fontWeight: 300 }}>:</span>
             <div style={{ flex: 1 }}>
-              <input type="number" value={mins} onChange={(e) => setMins(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} min="0" max="59" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
+              <input type="number" value={mins} onChange={(e) => setMins(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} onBlur={() => recalcStart(hours, mins, secs)} min="0" max="59" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
               <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>min</div>
             </div>
             <span style={{ fontSize: 20, color: theme.textSec, fontWeight: 300 }}>:</span>
             <div style={{ flex: 1 }}>
-              <input type="number" value={secs} onChange={(e) => setSecs(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} min="0" max="59" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
+              <input type="number" value={secs} onChange={(e) => setSecs(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} onBlur={() => recalcStart(hours, mins, secs)} min="0" max="59" style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", textAlign: "center" }} />
               <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>seg</div>
             </div>
           </div>
