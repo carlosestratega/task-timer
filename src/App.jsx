@@ -87,6 +87,8 @@ const I = {
   target: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>,
   fire: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12,2C6.5,7,4,11,4,14a8,8,0,0,0,16,0C20,11,17.5,7,12,2Z" /></svg>,
   tag: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59,13.41l-7.17,7.17a2,2,0,0,1-2.83,0L2,12V2H12l8.59,8.59A2,2,0,0,1,20.59,13.41Z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>,
+  search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
+  collapseAll: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18,15 12,9 6,15" /><polyline points="18,20 12,14 6,20" /></svg>,
 };
 
 const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16", "#eab308", "#a855f7"];
@@ -779,7 +781,7 @@ export default function App() {
   const [showDone, setShowDone] = useState(false);
   const [noteModal, setNoteModal] = useState(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
-  const [showSubsMain, setShowSubsMain] = useState(true);
+  const [showSubsMain, setShowSubsMain] = useState(new Set());
   const [editingSubId, setEditingSubId] = useState(null);
   const [editingSubVal, setEditingSubVal] = useState("");
   const [editingTagIdx, setEditingTagIdx] = useState(null);
@@ -791,8 +793,10 @@ export default function App() {
   const [activeTags, setActiveTags] = useState(() => { try { const r = localStorage.getItem("task-timer-active-tags"); if (r) return JSON.parse(r); } catch (e) {} return []; });
   const [newTagName, setNewTagName] = useState("");
   const [pendingStop, setPendingStop] = useState(null); // { id, duration, tags }
+  const [pendingTags, setPendingTags] = useState([]);
   const [showBackups, setShowBackups] = useState(false);
   const [backups, setBackups] = useState([]);
+  const [searchQ, setSearchQ] = useState("");
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -981,6 +985,7 @@ export default function App() {
     if (duration > 0) {
       // Show emotion picker
       setPendingStop({ id, duration, tags: [...activeTags] });
+      setPendingTags([...activeTags]);
     } else {
       // No duration, just stop
       finishStop(id, null);
@@ -988,14 +993,15 @@ export default function App() {
   };
 
   const finishStop = (id, mood) => {
-    const ps = pendingStop || { id, duration: 0, tags: [...activeTags] };
+    const ps = pendingStop || { id, duration: 0, tags: [...pendingTags] };
+    const finalTags = pendingTags.length > 0 ? [...pendingTags] : ps.tags;
     setCat((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
         if (t.id === id && t.startedAt) {
           const duration = calcElapsed(t.startedAt);
           if (duration > 0) {
             const now = new Date();
-            const session = { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: ps.tags };
+            const session = { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: finalTags };
             if (mood) session.mood = mood;
             return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, session] };
           }
@@ -1011,6 +1017,7 @@ export default function App() {
     setActiveTags([]);
     try { localStorage.setItem("task-timer-active-tags", "[]"); } catch (e) {}
     setPendingStop(null);
+    setPendingTags([]);
   };
 
   const doStart = (id) => {
@@ -1065,7 +1072,7 @@ export default function App() {
   const moveSubtask = (taskId, stId, dir) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const subs = [...(t.subtasks || [])]; const i = subs.findIndex((s) => s.id === stId); if ((dir === -1 && i === 0) || (dir === 1 && i === subs.length - 1)) return t; [subs[i], subs[i + dir]] = [subs[i + dir], subs[i]]; return { ...t, subtasks: subs }; }) })));
   const renameTag = (oldName, newName) => { if (!newName.trim() || newName.trim() === oldName) return; updateTags((p) => p.map((t) => t === oldName ? newName.trim() : t)); setActiveTags((p) => { const next = p.map((t) => t === oldName ? newName.trim() : t); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
   const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; updateTags((p) => [...p, name.trim()]); };
-  const delTag = (name) => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
+  const delTag = (name) => { setModal({ title: "¿Eliminar etiqueta?", message: `"${name}" se eliminará de la lista.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); setModal(null); } }); };
   const toggleActiveTag = (name) => { setActiveTags((p) => { const next = p.includes(name) ? p.filter((t) => t !== name) : [...p, name]; try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
   const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [], endedAt: changes.endedAt || old.endedAt, date: changes.date || old.date, dateISO: changes.dateISO || old.dateISO }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
@@ -1193,15 +1200,15 @@ export default function App() {
                   <div key={tag} style={{ display: "flex", alignItems: "center", gap: 0, padding: "4px 4px 4px 12px", borderRadius: 20, border: activeTags.includes(tag) ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: activeTags.includes(tag) ? `${c.color}15` : "transparent" }}>
                     <span onClick={() => toggleActiveTag(tag)} style={{ fontSize: 13, fontWeight: activeTags.includes(tag) ? 600 : 400, color: activeTags.includes(tag) ? c.color : theme.textSec, cursor: "pointer" }}>{tag}</span>
                     {showAllTags && <button onClick={() => { setEditingTagIdx(tgi); setEditingTagVal(tag); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.edit}</button>}
-                    {showAllTags && <button onClick={() => delTag(tag)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>}
+                    {showAllTags && <button onClick={() => setModal({ title: "¿Eliminar etiqueta?", message: `"${tag}" se eliminará permanentemente.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTag(tag) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "2px 4px", opacity: 0.4, display: "flex" }}>{I.x}</button>}
                   </div>
                 );
               };
 
               return (
-                <div style={{ marginTop: 24, width: "90%", maxWidth: 320, margin: "24px auto 0" }}>
-                  <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>{I.tag} {isActive ? "Mientras tanto..." : "Etiquetas"}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+                <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
+                  <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>{I.tag} {isActive ? "Mientras tanto..." : "Etiquetas"}</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {visible.map(renderTag)}
                     {hasMore && !showAllTags && (
                       <button onClick={() => setShowAllTags(true)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 13, cursor: "pointer" }}>+{activeFirst.length - TAG_LIMIT} más</button>
@@ -1281,14 +1288,27 @@ export default function App() {
       {editModal && <EditModal {...editModal} onCancel={() => setEditModal(null)} theme={theme} />}
       {noteModal && <SessionEditModal {...noteModal} allTags={tags} onSave={saveSessionEdit} onCancel={() => setNoteModal(null)} theme={theme} dk={dk} />}
 
-      {/* Mood picker */}
+      {/* Mood + Tags picker */}
       {pendingStop && (() => {
         const { task: pt, cat: pc } = getTask(pendingStop.id) || {};
+        const togglePendingTag = (tag) => setPendingTags((p) => p.includes(tag) ? p.filter((t) => t !== tag) : [...p, tag]);
         return (
           <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s" }} onClick={() => finishStop(pendingStop.id, null)}>
-            <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "28px 24px", maxWidth: 340, width: "100%", textAlign: "center" }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "28px 24px", maxWidth: 380, width: "100%", textAlign: "center" }}>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>¿Cómo te ha ido?</div>
               <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>{pt?.name || ""} · {fmtShort(pendingStop.duration)}</div>
+              {/* Tags */}
+              {tags.length > 0 && (
+                <div style={{ margin: "16px 0", textAlign: "left" }}>
+                  <div style={{ fontSize: 11, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Mientras tanto...</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {tags.map((tag) => (
+                      <button key={tag} onClick={() => togglePendingTag(tag)} style={{ padding: "5px 14px", borderRadius: 20, border: pendingTags.includes(tag) ? `2px solid ${pc?.color || "#6366f1"}` : `1px solid ${theme.border}`, backgroundColor: pendingTags.includes(tag) ? `${pc?.color || "#6366f1"}15` : "transparent", color: pendingTags.includes(tag) ? (pc?.color || "#6366f1") : theme.textSec, fontSize: 13, fontWeight: pendingTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>{tag}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Mood */}
               <div style={{ display: "flex", justifyContent: "center", gap: 12, margin: "20px 0" }}>
                 {MOODS.map((m) => (
                   <button key={m} onClick={() => finishStop(pendingStop.id, m)} style={{ width: 52, height: 52, borderRadius: 14, border: `2px solid ${theme.border}`, backgroundColor: theme.surface, fontSize: 28, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform .1s, border-color .15s" }} onMouseEnter={(e) => { e.target.style.transform = "scale(1.15)"; e.target.style.borderColor = pc?.color || "#6366f1"; }} onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; e.target.style.borderColor = theme.border; }}>{m}</button>
@@ -1310,11 +1330,18 @@ export default function App() {
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} onBackups={loadBackups} syncing={syncing} theme={theme} dk={dk} />
+              <button onClick={() => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id)))} title={expanded.size > 0 ? "Contraer todas" : "Expandir todas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{expanded.size > 0 ? I.collapseAll : I.chev}</button>
               <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
               <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
             </div>
           </div>
-          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+          {/* Search */}
+          <div style={{ marginTop: 12, position: "relative" }}>
+            <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: theme.textSec, display: "flex", opacity: 0.5 }}>{I.search}</div>
+            <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Buscar tareas..." style={{ width: "100%", padding: "10px 14px 10px 38px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+            {searchQ && <button onClick={() => setSearchQ("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: theme.textSec, cursor: "pointer", display: "flex", padding: 4 }}>{I.x}</button>}
+          </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
             <button onClick={() => { setShowNewCat(true); setShowNewTask(null); }} style={{ flex: 1, background: theme.accent, border: "none", borderRadius: 10, color: dk ? "#000" : "#fff", cursor: "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, fontWeight: 600 }}>{I.plus}<span>Nueva categoría</span></button>
             <button onClick={exportData} title="Exportar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.dl}</button>
             <button onClick={() => fileRef.current?.click()} title="Importar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.ul}</button>
@@ -1348,16 +1375,22 @@ export default function App() {
         {/* Categories */}
         <div style={{ paddingTop: 4, paddingBottom: 100 }}>
           {categories.map((cat, catIdx) => {
-            const aTasks = cat.tasks.filter((t) => !t.completed);
+            const sq = searchQ.trim().toLowerCase();
+            const aTasks = cat.tasks.filter((t) => !t.completed && (!sq || t.name.toLowerCase().includes(sq)));
             const weekStart = getWeekStart();
-            const cTasks = cat.tasks.filter((t) => t.completed && t.completedAt && new Date(t.completedAt) >= weekStart);
+            const cTasks = cat.tasks.filter((t) => t.completed && t.completedAt && new Date(t.completedAt) >= weekStart && (!sq || t.name.toLowerCase().includes(sq)));
+            const allATasks = cat.tasks.filter((t) => !t.completed);
+            // If searching and no matches in this category, hide it
+            if (sq && aTasks.length === 0 && cTasks.length === 0) return null;
+            // Auto-expand categories when searching
+            const isExpanded = sq ? true : expanded.has(cat.id);
             return (
               <div key={cat.id} style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }} onClick={() => toggle(cat.id)}>
                     <div style={{ width: 14, height: 14, borderRadius: 4, backgroundColor: cat.color, opacity: 0.8 }} />
                     <span style={{ fontSize: 17, fontWeight: 600 }}>{cat.name}</span>
-                    <span style={{ fontSize: 14, color: theme.textSec }}>{aTasks.length}</span>
+                    <span style={{ fontSize: 14, color: theme.textSec }}>{allATasks.length}</span>
                     {cTasks.length > 0 && <span style={{ fontSize: 12, color: "#10b981" }}>+{cTasks.length} ✓</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -1365,11 +1398,11 @@ export default function App() {
                     <button onClick={() => moveCat(cat.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === categories.length - 1 ? 0.15 : 0.5 }}>{I.down}</button>
                     <button onClick={() => setEditModal({ title: "Editar categoría", value: cat.name, color: cat.color, onColorChange: true, onSave: (n, c) => editCatSave(cat.id, n, c) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.edit}</button>
                     <button onClick={() => setModal({ title: "¿Eliminar categoría?", message: `"${cat.name}" y todas sus tareas.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delCat(cat.id) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
-                    <div onClick={() => toggle(cat.id)} style={{ transform: expanded.has(cat.id) ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", color: theme.textSec, display: "flex", cursor: "pointer", padding: 4 }}>{I.chev}</div>
+                    <div onClick={() => toggle(cat.id)} style={{ transform: isExpanded ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", color: theme.textSec, display: "flex", cursor: "pointer", padding: 4 }}>{I.chev}</div>
                   </div>
                 </div>
 
-                {expanded.has(cat.id) && (<div>
+                {isExpanded && (<div>
                   {aTasks.map((task, ti) => {
                     const t = ensureTask(task);
                     const isActive = activeId === t.id;
@@ -1396,11 +1429,11 @@ export default function App() {
                         {/* Inline subtasks */}
                         {(t.subtasks || []).length > 0 && (
                           <div style={{ marginTop: 8, paddingTop: 4, borderTop: `1px solid ${theme.border}` }} onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => setShowSubsMain((p) => !p)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", padding: "2px 0", marginBottom: 2 }}>
-                              <div style={{ transform: showSubsMain ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>
+                            <button onClick={() => setShowSubsMain((p) => { const n = new Set(p); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", padding: "2px 0", marginBottom: 2 }}>
+                              <div style={{ transform: showSubsMain.has(t.id) ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>
                               Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})
                             </button>
-                            {showSubsMain && (t.subtasks || []).map((st) => (
+                            {showSubsMain.has(t.id) && (t.subtasks || []).map((st) => (
                               <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }}>
                                 <button onClick={() => toggleSubtask(t.id, st.id)} style={{ width: 18, height: 18, borderRadius: 5, border: st.done ? "none" : `1.5px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
                                 <span style={{ fontSize: 13, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text }}>{st.name}</span>
