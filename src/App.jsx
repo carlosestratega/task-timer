@@ -312,6 +312,19 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
   const [mins, setMins] = useState(durM);
   const [secs, setSecs] = useState(durS);
   const [endTime, setEndTime] = useState(session.endedAt || "");
+  const initStartTime = session.startedAt || (() => {
+    // Calculate from endedAt - duration
+    if (session.endedAt && session.duration) {
+      const [h, m] = session.endedAt.split(":").map(Number);
+      const endMins = h * 60 + m;
+      const startMins = endMins - Math.floor(session.duration / 60);
+      const sh = Math.floor(((startMins % 1440) + 1440) % 1440 / 60);
+      const sm = ((startMins % 1440) + 1440) % 1440 % 60;
+      return `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`;
+    }
+    return "";
+  })();
+  const [startTime, setStartTime] = useState(initStartTime);
   // Parse date from dateISO or date string
   const initDate = (() => {
     if (session.dateISO) { const d = new Date(session.dateISO); return d.toISOString().slice(0, 10); }
@@ -325,10 +338,21 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
     <Modal title="Editar sesión" onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
-          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha y hora</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
-            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} style={{ width: 110, padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha</div>
+          <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Horario</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+              <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>Inicio</div>
+            </div>
+            <span style={{ fontSize: 16, color: theme.textSec }}>→</span>
+            <div style={{ flex: 1 }}>
+              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+              <div style={{ fontSize: 11, color: theme.textSec, textAlign: "center", marginTop: 3 }}>Fin</div>
+            </div>
           </div>
         </div>
         <div>
@@ -379,7 +403,7 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
             const newDateISO = dateVal && endTime ? new Date(`${dateVal}T${endTime}`).toISOString() : session.dateISO;
             const dp = dateVal ? dateVal.split("-") : null;
             const newDate = dp ? `${dp[2]}/${dp[1]}/${dp[0]}` : session.date;
-            onSave(taskId, sessIdx, { note, mood, duration: newDuration, tags: sessTags, endedAt: endTime || session.endedAt, date: newDate, dateISO: newDateISO });
+            onSave(taskId, sessIdx, { note, mood, duration: newDuration, tags: sessTags, startedAt: startTime || session.startedAt, endedAt: endTime || session.endedAt, date: newDate, dateISO: newDateISO });
           }} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
@@ -1001,7 +1025,7 @@ export default function App() {
           const duration = calcElapsed(t.startedAt);
           if (duration > 0) {
             const now = new Date();
-            const session = { duration, endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: finalTags };
+            const session = { duration, startedAt: new Date(now.getTime() - duration * 1000).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), endedAt: now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), date: now.toLocaleDateString("es-ES"), dateISO: now.toISOString(), note: "", tags: finalTags };
             if (mood) session.mood = mood;
             return { ...t, isRunning: false, startedAt: null, totalSeconds: t.totalSeconds + duration, sessions: [...t.sessions, session] };
           }
@@ -1074,7 +1098,7 @@ export default function App() {
   const addTag = (name) => { if (!name.trim() || tags.includes(name.trim())) return; updateTags((p) => [...p, name.trim()]); };
   const delTag = (name) => { setModal({ title: "¿Eliminar etiqueta?", message: `"${name}" se eliminará de la lista.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); setModal(null); } }); };
   const toggleActiveTag = (name) => { setActiveTags((p) => { const next = p.includes(name) ? p.filter((t) => t !== name) : [...p, name]; try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
-  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [], endedAt: changes.endedAt || old.endedAt, date: changes.date || old.date, dateISO: changes.dateISO || old.dateISO }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
+  const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [], startedAt: changes.startedAt || old.startedAt, endedAt: changes.endedAt || old.endedAt, date: changes.date || old.date, dateISO: changes.dateISO || old.dateISO }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -1265,7 +1289,7 @@ export default function App() {
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: theme.textSec }}>
                         <span>{s.mood ? `${s.mood} ` : ""}{fmtShort(s.duration)}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span>{s.date ? `${s.date} · ${s.endedAt}` : s.endedAt}</span>
+                          <span>{s.date ? `${s.date} · ` : ""}{s.startedAt ? `${s.startedAt} → ` : ""}{s.endedAt}</span>
                           <button onClick={() => setNoteModal({ taskId: timerView, sessIdx: si, session: s })} style={{ background: "none", border: "none", color: (s.note || s.mood) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 2, opacity: (s.note || s.mood) ? 1 : 0.4 }}>{I.edit}</button>
                           <button onClick={() => setModal({ title: "¿Eliminar sesión?", message: `${fmtShort(s.duration)} · ${s.date || ""} ${s.endedAt || ""}`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delSession(timerView, si) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
                         </div>
