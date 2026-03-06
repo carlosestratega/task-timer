@@ -476,11 +476,6 @@ function StatsView({ categories, theme, dk, onClose }) {
             </div>
           ))}
         </div>
-        <div style={{ padding: "12px 0 16px", borderBottom: `1px solid ${theme.border}` }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Últimas 12 semanas</div>
-          <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>{weeks.map((w, wi) => (<div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>{w.map((d, di) => (<div key={di} title={`${d.label}: ${fmtShort(d.tot)}`} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatColor(d.tot) }} />))}</div>))}</div>
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginTop: 8, fontSize: 11, color: theme.textSec }}><span>Menos</span>{[0, 0.25, 0.5, 0.75, 1].map((v, i) => <div key={i} style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: heatColor(v * maxHeat || (i === 0 ? 0 : 1)) }} />)}<span>Más</span></div>
-        </div>
         <div style={{ display: "flex", gap: 6, padding: "16px 0 8px", overflowX: "auto" }}>{periods.map((p) => (<button key={p.key} onClick={() => setPeriod(p.key)} style={{ padding: "8px 14px", borderRadius: 20, border: period === p.key ? "none" : `1px solid ${theme.border}`, backgroundColor: period === p.key ? theme.accent : "transparent", color: period === p.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 14, fontWeight: period === p.key ? 600 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{p.label}</button>))}</div>
         <div style={{ display: "flex", gap: 6, padding: "8px 0 16px", overflowX: "auto" }}>
           <button onClick={() => setFilter("all")} style={{ padding: "6px 12px", borderRadius: 16, border: filter === "all" ? "none" : `1px solid ${theme.border}`, backgroundColor: filter === "all" ? (dk ? "#333" : "#ddd") : "transparent", color: filter === "all" ? theme.text : theme.textSec, fontSize: 13, cursor: "pointer", flexShrink: 0 }}>Todas</button>
@@ -787,6 +782,11 @@ function StatsView({ categories, theme, dk, onClose }) {
             </div>
           );
         })()}
+        <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Últimas 12 semanas</div>
+          <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>{weeks.map((w, wi) => (<div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>{w.map((d, di) => (<div key={di} title={`${d.label}: ${fmtShort(d.tot)}`} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatColor(d.tot) }} />))}</div>))}</div>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginTop: 8, fontSize: 11, color: theme.textSec }}><span>Menos</span>{[0, 0.25, 0.5, 0.75, 1].map((v, i) => <div key={i} style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: heatColor(v * maxHeat || (i === 0 ? 0 : 1)) }} />)}<span>Más</span></div>
+        </div>
         <div style={{ height: 80 }} />
       </div>
     </div>
