@@ -91,6 +91,8 @@ const I = {
   collapseAll: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18,15 12,9 6,15" /><polyline points="18,20 12,14 6,20" /></svg>,
   subtasks: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><polyline points="4,6 5,7 7,5" /><polyline points="4,12 5,13 7,11" /><polyline points="4,18 5,19 7,17" /></svg>,
   paste: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16,4h2a2,2,0,0,1,2,2V20a2,2,0,0,1-2,2H6a2,2,0,0,1-2-2V6A2,2,0,0,1,6,4H8" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="8" y1="16" x2="16" y2="16" /></svg>,
+  sort: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="12" x2="12" y2="12" /><line x1="4" y1="18" x2="8" y2="18" /><polyline points="18,14 21,17 18,20" /><line x1="21" y1="17" x2="21" y2="7" /></svg>,
+  grip: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" /></svg>,
 };
 
 const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16", "#eab308", "#a855f7"];
@@ -252,7 +254,7 @@ function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
             {options.map((o, i) => (
               <button key={i} onClick={o.onSelect} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer", textAlign: "left" }}>
-                <div style={{ width: 12, height: 12, borderRadius: 4, backgroundColor: o.color, flexShrink: 0 }} />
+                {o.color && <div style={{ width: 12, height: 12, borderRadius: 4, backgroundColor: o.color, flexShrink: 0 }} />}
                 {o.label}
               </button>
             ))}
@@ -939,6 +941,7 @@ export default function App() {
   const [backups, setBackups] = useState([]);
   const [searchQ, setSearchQ] = useState("");
   const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [dragOverId, setDragOverId] = useState(null);
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1207,6 +1210,8 @@ export default function App() {
   const moveTaskToCat = (taskId, toCatId) => { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((t) => t.id === taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }; }); if (!task) return p; return without.map((c) => c.id === toCatId ? { ...c, tasks: [...c.tasks, task] } : c); }); setModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
+  const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
+  const dragRef = useRef({ taskId: null, catId: null });
   const addSubtask = (taskId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
   const toggleSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) })));
   const delSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) })));
@@ -1560,6 +1565,7 @@ export default function App() {
                     {cTasks.length > 0 && <span style={{ fontSize: 12, color: "#10b981" }}>+{cTasks.length} ✓</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <button onClick={() => setModal({ title: `Ordenar "${cat.name}"`, options: [ { label: "A → Z", onSelect: () => sortTasks(cat.id, "alpha") }, { label: "Z → A", onSelect: () => sortTasks(cat.id, "alpha-desc") }, { label: "Más tiempo", onSelect: () => sortTasks(cat.id, "time") }, { label: "Menos tiempo", onSelect: () => sortTasks(cat.id, "time-asc") }, { label: "Más sesiones", onSelect: () => sortTasks(cat.id, "sessions") }, { label: "Más reciente", onSelect: () => sortTasks(cat.id, "recent") } ] })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.sort}</button>
                     <button onClick={() => moveCat(cat.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === 0 ? 0.15 : 0.5 }}>{I.up}</button>
                     <button onClick={() => moveCat(cat.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === categories.length - 1 ? 0.15 : 0.5 }}>{I.down}</button>
                     <button onClick={() => setEditModal({ title: "Editar categoría", value: cat.name, color: cat.color, onColorChange: true, onSave: (n, c) => editCatSave(cat.id, n, c) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.edit}</button>
@@ -1575,15 +1581,18 @@ export default function App() {
                     const tToday = todayTime(t);
                     const goalPct = t.goalDaily > 0 ? Math.min(100, (tToday / t.goalDaily) * 100) : -1;
                     return (
-                      <div key={t.id} onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: isActive ? `${cat.color}12` : theme.card, border: `1px solid ${isActive ? `${cat.color}33` : theme.border}`, cursor: "pointer" }}>
+                      <div key={t.id} draggable onDragStart={(e) => { dragRef.current = { taskId: t.id, catId: cat.id }; e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.4"; }} onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; setDragOverId(null); dragRef.current = { taskId: null, catId: null }; }} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverId !== t.id) setDragOverId(t.id); }} onDrop={(e) => { e.preventDefault(); setDragOverId(null); const from = dragRef.current; if (!from.taskId || from.taskId === t.id) return; if (from.catId === cat.id) { update((p) => p.map((c) => { if (c.id !== cat.id) return c; const tasks = [...c.tasks]; const fi = tasks.findIndex((x) => x.id === from.taskId); const toI = tasks.findIndex((x) => x.id === t.id); if (fi < 0 || toI < 0) return c; const [moved] = tasks.splice(fi, 1); tasks.splice(toI, 0, moved); return { ...c, tasks }; })); } else { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((x) => x.id === from.taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((x) => x.id !== from.taskId) }; }); if (!task) return p; return without.map((c) => { if (c.id !== cat.id) return c; const tasks = [...c.tasks]; const toI = tasks.findIndex((x) => x.id === t.id); tasks.splice(toI, 0, task); return { ...c, tasks }; }); }); } }} onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: isActive ? `${cat.color}12` : theme.card, border: `1px solid ${isActive ? `${cat.color}33` : (dragOverId === t.id ? cat.color : theme.border)}`, cursor: "pointer", borderTop: dragOverId === t.id ? `2px solid ${cat.color}` : undefined, transition: "border-color .15s" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
-                            <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-                            <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                              {I.clock} <span>{fmtLong(t.totalSeconds + (isActive ? elapsed : 0))}</span>
-                              {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
-                              {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
-                              {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, marginRight: 8 }}>
+                            <div onMouseDown={(e) => e.stopPropagation()} style={{ color: theme.textSec, opacity: 0.25, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none" }}>{I.grip}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                              <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                                {I.clock} <span>{fmtLong(t.totalSeconds + (isActive ? elapsed : 0))}</span>
+                                {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
+                                {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
+                                {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
+                              </div>
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
