@@ -90,6 +90,7 @@ const I = {
   search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
   collapseAll: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18,15 12,9 6,15" /><polyline points="18,20 12,14 6,20" /></svg>,
   subtasks: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><polyline points="4,6 5,7 7,5" /><polyline points="4,12 5,13 7,11" /><polyline points="4,18 5,19 7,17" /></svg>,
+  paste: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16,4h2a2,2,0,0,1,2,2V20a2,2,0,0,1-2,2H6a2,2,0,0,1-2-2V6A2,2,0,0,1,6,4H8" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="8" y1="16" x2="16" y2="16" /></svg>,
 };
 
 const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16", "#eab308", "#a855f7"];
@@ -439,6 +440,70 @@ function SubtaskInput({ taskId, onAdd, theme }) {
     <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
       <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && val.trim()) { onAdd(taskId, val); setVal(""); } }} placeholder="Nueva subtarea..." style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
       <button onClick={() => { if (val.trim()) { onAdd(taskId, val); setVal(""); } }} style={{ padding: "0 12px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600 }}>+</button>
+    </div>
+  );
+}
+
+function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
+  const [catId, setCatId] = useState(categories.length > 0 ? categories[0].id : "");
+  const [text, setText] = useState("");
+  const lines = text.split("\n").filter((l) => l.trim());
+  let preview = [], cur = null;
+  lines.forEach((line) => {
+    const t = line.trim();
+    if (t.startsWith("- ") || t.startsWith("· ") || t.startsWith("* ")) {
+      if (cur) cur.subs.push(t.slice(2).trim());
+    } else {
+      if (cur) preview.push(cur);
+      cur = { name: t, subs: [] };
+    }
+  });
+  if (cur) preview.push(cur);
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+          <button onClick={onCancel} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Añadir rápido</h1>
+        </div>
+        <div style={{ padding: "20px 0" }}>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Categoría</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+            {categories.map((c) => (
+              <button key={c.id} onClick={() => setCatId(c.id)} style={{ padding: "8px 16px", borderRadius: 10, border: catId === c.id ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: catId === c.id ? `${c.color}15` : "transparent", color: catId === c.id ? c.color : theme.textSec, fontSize: 14, fontWeight: catId === c.id ? 600 : 400, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c.color }} />{c.name}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Pega tus tareas</div>
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · Con "- " delante = subtarea</div>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grabar contenido\n- Preparar editor\n- Grabar con guiones\n\nTest transcripción\n- 5 guiones sin voz\n- 5 guiones con voz"} rows={10} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+          {preview.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 10 }}>Vista previa: {preview.length} tarea{preview.length > 1 ? "s" : ""}</div>
+              {preview.map((p, i) => (
+                <div key={i} style={{ padding: "10px 14px", marginBottom: 6, borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: 15, fontWeight: 500 }}>{p.name}</div>
+                  {p.subs.length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      {p.subs.map((s, si) => (
+                        <div key={si} style={{ fontSize: 13, color: theme.textSec, padding: "2px 0", display: "flex", alignItems: "center", gap: 6 }}>
+                          <div style={{ width: 14, height: 14, borderRadius: 4, border: `1.5px solid ${theme.border}`, flexShrink: 0 }} />
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+            <button onClick={onCancel} style={{ flex: 1, padding: "12px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
+            <button onClick={() => { if (catId && preview.length > 0) onAdd(catId, text); }} disabled={!catId || preview.length === 0} style={{ flex: 1, padding: "12px", borderRadius: 10, border: "none", backgroundColor: preview.length > 0 ? (categories.find((c) => c.id === catId)?.color || "#6366f1") : theme.surface, color: preview.length > 0 ? "#fff" : theme.textSec, fontSize: 15, fontWeight: 600, cursor: preview.length > 0 ? "pointer" : "default", opacity: preview.length > 0 ? 1 : 0.5 }}>Crear {preview.length > 0 ? preview.length : ""} tarea{preview.length !== 1 ? "s" : ""}</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -873,6 +938,7 @@ export default function App() {
   const [showBackups, setShowBackups] = useState(false);
   const [backups, setBackups] = useState([]);
   const [searchQ, setSearchQ] = useState("");
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1151,6 +1217,25 @@ export default function App() {
   const delTag = (name) => { setModal({ title: "¿Eliminar etiqueta?", message: `"${name}" se eliminará de la lista.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => { updateTags((p) => p.filter((t) => t !== name)); setActiveTags((p) => { const next = p.filter((t) => t !== name); try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); setModal(null); } }); };
   const toggleActiveTag = (name) => { setActiveTags((p) => { const next = p.includes(name) ? p.filter((t) => t !== name) : [...p, name]; try { localStorage.setItem("task-timer-active-tags", JSON.stringify(next)); } catch (e) {} return next; }); };
   const saveSessionEdit = (taskId, sessIdx, changes) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const old = s[sessIdx]; const timeDiff = changes.duration - old.duration; s[sessIdx] = { ...old, note: changes.note, mood: changes.mood, duration: changes.duration, tags: changes.tags || old.tags || [], startedAt: changes.startedAt || old.startedAt, endedAt: changes.endedAt || old.endedAt, date: changes.date || old.date, dateISO: changes.dateISO || old.dateISO }; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds + timeDiff) }; }) }))); setNoteModal(null); };
+  const bulkAdd = (catId, text) => {
+    const lines = text.split("\n").filter((l) => l.trim());
+    const tasks = [];
+    let current = null;
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("- ") || trimmed.startsWith("· ") || trimmed.startsWith("* ")) {
+        if (current) current.subtasks.push({ id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed.slice(2).trim(), done: false });
+      } else {
+        if (current) tasks.push(current);
+        current = { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed, totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" };
+      }
+    });
+    if (current) tasks.push(current);
+    if (tasks.length === 0) return;
+    update((p) => p.map((c) => c.id === catId ? { ...c, tasks: [...c.tasks, ...tasks] } : c));
+    setExpanded((p) => new Set([...p, catId]));
+    setShowBulkAdd(false);
+  };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -1218,6 +1303,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Bulk Add */}
+      {showBulkAdd && <BulkAddModal categories={categories} onAdd={bulkAdd} onCancel={() => setShowBulkAdd(false)} theme={theme} dk={dk} />}
 
       {/* Timer fullscreen */}
       {timerView && atd?.task && (() => {
@@ -1420,6 +1508,7 @@ export default function App() {
           </div>
           <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
             <button onClick={() => { setShowNewCat(true); setShowNewTask(null); }} style={{ flex: 1, background: theme.accent, border: "none", borderRadius: 10, color: dk ? "#000" : "#fff", cursor: "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, fontWeight: 600 }}>{I.plus}<span>Nueva categoría</span></button>
+            <button onClick={() => setShowBulkAdd(true)} title="Añadir rápido" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.paste}</button>
             <button onClick={exportData} title="Exportar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.dl}</button>
             <button onClick={() => fileRef.current?.click()} title="Importar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.ul}</button>
             <input ref={fileRef} type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
