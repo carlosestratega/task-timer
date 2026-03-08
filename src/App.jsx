@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { auth, googleProvider, db } from "./firebase";
 import {
   signInWithPopup,
@@ -445,6 +448,18 @@ function SubtaskInput({ taskId, onAdd, theme }) {
       <button onClick={() => { if (val.trim()) { onAdd(taskId, val); setVal(""); } }} style={{ padding: "0 12px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600 }}>+</button>
     </div>
   );
+}
+
+function SortableTask({ id, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, position: "relative", zIndex: isDragging ? 10 : "auto" };
+  return <div ref={setNodeRef} style={style} {...attributes}>{children(listeners)}</div>;
+}
+
+function SortableSub({ id, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return <div ref={setNodeRef} style={style} {...attributes}>{children(listeners)}</div>;
 }
 
 function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
@@ -1004,16 +1019,12 @@ export default function App() {
   const [backups, setBackups] = useState([]);
   const [searchQ, setSearchQ] = useState("");
   const [showBulkAdd, setShowBulkAdd] = useState(false);
-  const [dragOverId, setDragOverId] = useState(null);
-  const dragOverRef = useRef(null);
-  const touchDrag = useRef({ active: false, type: null, id: null, catId: null, el: null, startY: 0 });
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
   const fileRef = useRef(null);
-  const catsRef = useRef(categories); // always-current ref for callbacks
+  const catsRef = useRef(categories);
   const tagsRef = useRef(tags);
-  const updateRef = useRef(null);
 
   catsRef.current = categories;
   tagsRef.current = tags;
@@ -1294,7 +1305,6 @@ export default function App() {
       return next;
     });
   };
-  updateRef.current = update;
   const updateTags = (fn) => {
     setTags((prev) => {
       const next = fn(prev);
@@ -1317,53 +1327,33 @@ export default function App() {
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
   const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
-  const dragRef = useRef({ taskId: null, catId: null });
-  // Touch drag helpers
-  const handleTouchStart = (e, type, id, catId, taskId) => {
-    const touch = e.touches[0];
-    touchDrag.current = { active: true, type, id, catId, taskId, startY: touch.clientY };
-    e.currentTarget.closest("[data-drag]").style.opacity = "0.4";
-    e.preventDefault();
+
+  // dnd-kit sensors
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }));
+  const handleTaskDragEnd = (catId, event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    update((p) => p.map((c) => {
+      if (c.id !== catId) return c;
+      const oldIdx = c.tasks.findIndex((t) => t.id === active.id);
+      const newIdx = c.tasks.findIndex((t) => t.id === over.id);
+      if (oldIdx < 0 || newIdx < 0) return c;
+      return { ...c, tasks: arrayMove(c.tasks, oldIdx, newIdx) };
+    }));
   };
-  const handleTouchMove = useCallback((e) => {
-    if (!touchDrag.current.active) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (el) {
-      const dragEl = el.closest("[data-drag]");
-      const newId = dragEl?.getAttribute("data-drag") || null;
-      if (newId && newId !== touchDrag.current.id) { dragOverRef.current = newId; setDragOverId(newId); }
-    }
-  }, []);
-  const handleTouchEnd = useCallback(() => {
-    if (!touchDrag.current.active) return;
-    const from = touchDrag.current;
-    const toId = dragOverRef.current;
-    document.querySelectorAll("[data-drag]").forEach((el) => { el.style.opacity = "1"; });
-    dragOverRef.current = null;
-    setDragOverId(null);
-    touchDrag.current = { active: false };
-    if (!toId || toId === from.id || !updateRef.current) return;
-    const doUpdate = updateRef.current;
-    if (from.type === "task") {
-      let toCatId = null;
-      for (const c of catsRef.current) { if (c.tasks.find((t) => t.id === toId)) { toCatId = c.id; break; } }
-      if (!toCatId) return;
-      if (from.catId === toCatId) {
-        doUpdate((p) => p.map((c) => { if (c.id !== toCatId) return c; const tasks = [...c.tasks]; const fi = tasks.findIndex((x) => x.id === from.id); const toI = tasks.findIndex((x) => x.id === toId); if (fi < 0 || toI < 0) return c; const [moved] = tasks.splice(fi, 1); tasks.splice(toI, 0, moved); return { ...c, tasks }; }));
-      } else {
-        doUpdate((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((x) => x.id === from.id); if (found) task = found; return { ...c, tasks: c.tasks.filter((x) => x.id !== from.id) }; }); if (!task) return p; return without.map((c) => { if (c.id !== toCatId) return c; const tasks = [...c.tasks]; const toI = tasks.findIndex((x) => x.id === toId); tasks.splice(toI, 0, task); return { ...c, tasks }; }); });
-      }
-    } else if (from.type === "sub") {
-      doUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((tk) => { if (tk.id !== from.taskId) return tk; const subs = [...(tk.subtasks || [])]; const fi = subs.findIndex((s) => s.id === from.id); const toI = subs.findIndex((s) => s.id === toId); if (fi < 0 || toI < 0) return tk; const [moved] = subs.splice(fi, 1); subs.splice(toI, 0, moved); return { ...tk, subtasks: subs }; }) })));
-    }
-  }, []);
-  useEffect(() => {
-    document.addEventListener("touchmove", handleTouchMove, { passive: false });
-    document.addEventListener("touchend", handleTouchEnd);
-    return () => { document.removeEventListener("touchmove", handleTouchMove); document.removeEventListener("touchend", handleTouchEnd); };
-  }, [handleTouchMove, handleTouchEnd]);
+  const handleSubDragEnd = (taskId, event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      const subs = t.subtasks || [];
+      const oldIdx = subs.findIndex((s) => s.id === active.id);
+      const newIdx = subs.findIndex((s) => s.id === over.id);
+      if (oldIdx < 0 || newIdx < 0) return t;
+      return { ...t, subtasks: arrayMove(subs, oldIdx, newIdx) };
+    }) })));
+  };
+
   const addSubtask = (taskId, name) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), { id: `st-${Date.now()}`, name: name.trim(), done: false }] } : t) }))); };
   const toggleSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).map((st) => st.id === stId ? { ...st, done: !st.done } : st) } : t) })));
   const delSubtask = (taskId, stId) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((st) => st.id !== stId) } : t) })));
@@ -1728,16 +1718,19 @@ export default function App() {
                 </div>
 
                 {isExpanded && (<div>
+                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={(e) => handleTaskDragEnd(cat.id, e)}>
+                  <SortableContext items={aTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                   {aTasks.map((task, ti) => {
                     const t = ensureTask(task);
                     const isActive = activeId === t.id;
                     const tToday = todayTime(t);
                     const goalPct = t.goalDaily > 0 ? Math.min(100, (tToday / t.goalDaily) * 100) : -1;
                     return (
-                      <div key={t.id} data-drag={t.id} draggable onDragStart={(e) => { dragRef.current = { taskId: t.id, catId: cat.id }; e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.4"; }} onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; setDragOverId(null); }} onDragOver={(e) => { e.preventDefault(); if (dragOverId !== t.id) setDragOverId(t.id); }} onDrop={(e) => { e.preventDefault(); setDragOverId(null); const from = dragRef.current; if (!from.taskId || from.taskId === t.id) return; if (from.catId === cat.id) { update((p) => p.map((c) => { if (c.id !== cat.id) return c; const tasks = [...c.tasks]; const fi = tasks.findIndex((x) => x.id === from.taskId); const toI = tasks.findIndex((x) => x.id === t.id); if (fi < 0 || toI < 0) return c; const [moved] = tasks.splice(fi, 1); tasks.splice(toI, 0, moved); return { ...c, tasks }; })); } else { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((x) => x.id === from.taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((x) => x.id !== from.taskId) }; }); if (!task) return p; return without.map((c) => { if (c.id !== cat.id) return c; const tasks = [...c.tasks]; const toI = tasks.findIndex((x) => x.id === t.id); tasks.splice(toI, 0, task); return { ...c, tasks }; }); }); } }} onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: isActive ? `${cat.color}12` : theme.card, border: `1px solid ${isActive ? `${cat.color}33` : (dragOverId === t.id ? cat.color : theme.border)}`, cursor: "pointer", borderTop: dragOverId === t.id ? `2px solid ${cat.color}` : undefined, transition: "border-color .15s" }}>
+                      <SortableTask key={t.id} id={t.id}>{(listeners) => (
+                      <div onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: isActive ? `${cat.color}12` : theme.card, border: `1px solid ${isActive ? `${cat.color}33` : theme.border}`, cursor: "pointer" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, marginRight: 8 }}>
-                            <div onTouchStart={(e) => handleTouchStart(e, "task", t.id, cat.id)} onMouseDown={(e) => e.stopPropagation()} style={{ color: theme.textSec, opacity: 0.25, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
+                            <div {...listeners} style={{ color: theme.textSec, opacity: 0.25, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
                               <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -1761,13 +1754,21 @@ export default function App() {
                               <div style={{ transform: showSubsMain.has(t.id) ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>
                               Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})
                             </button>
-                            {showSubsMain.has(t.id) && (t.subtasks || []).map((st, sti) => (
-                              <div key={st.id} data-drag={st.id} draggable onDragStart={(e) => { e.stopPropagation(); dragRef.current = { subId: st.id, taskId: t.id }; e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.4"; }} onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; setDragOverId(null); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (dragRef.current.subId && dragOverId !== st.id) setDragOverId(st.id); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverId(null); const from = dragRef.current; if (!from.subId || from.subId === st.id || from.taskId !== t.id) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((tk) => { if (tk.id !== t.id) return tk; const subs = [...(tk.subtasks || [])]; const fi = subs.findIndex((s) => s.id === from.subId); const toI = subs.findIndex((s) => s.id === st.id); if (fi < 0 || toI < 0) return tk; const [moved] = subs.splice(fi, 1); subs.splice(toI, 0, moved); return { ...tk, subtasks: subs }; }) }))); }} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0", borderTop: dragOverId === st.id ? `2px solid ${cat.color}` : "none" }}>
-                                <div onTouchStart={(e) => handleTouchStart(e, "sub", st.id, null, t.id)} style={{ color: theme.textSec, opacity: 0.2, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
-                                <button onClick={() => toggleSubtask(t.id, st.id)} style={{ width: 18, height: 18, borderRadius: 5, border: st.done ? "none" : `1.5px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
-                                <span style={{ fontSize: 13, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text }}>{st.name}</span>
-                              </div>
-                            ))}
+                            {showSubsMain.has(t.id) && (
+                              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={(e) => handleSubDragEnd(t.id, e)}>
+                              <SortableContext items={(t.subtasks || []).map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                              {(t.subtasks || []).map((st) => (
+                                <SortableSub key={st.id} id={st.id}>{(subListeners) => (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }}>
+                                    <div {...subListeners} style={{ color: theme.textSec, opacity: 0.2, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
+                                    <button onClick={() => toggleSubtask(t.id, st.id)} style={{ width: 18, height: 18, borderRadius: 5, border: st.done ? "none" : `1.5px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
+                                    <span style={{ fontSize: 13, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text }}>{st.name}</span>
+                                  </div>
+                                )}</SortableSub>
+                              ))}
+                              </SortableContext>
+                              </DndContext>
+                            )}
                           </div>
                         )}
                         <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
@@ -1781,8 +1782,11 @@ export default function App() {
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Eliminar?", message: `"${t.name}" permanentemente.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
                         </div>
                       </div>
+                      )}</SortableTask>
                     );
                   })}
+                  </SortableContext>
+                  </DndContext>
                   {showNewTask === cat.id ? (
                     <div style={{ display: "flex", gap: 8, marginTop: 5 }}>
                       <input autoFocus value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addTask(cat.id); if (e.key === "Escape") { setShowNewTask(null); setNewTaskName(""); } }} placeholder="Nueva tarea..." style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
