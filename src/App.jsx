@@ -1547,8 +1547,12 @@ export default function App() {
             {((t.subtasks || []).length > 0 || !t.completed) && (
               <div style={{ marginTop: 24, width: "90%", maxWidth: 320 }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})</div>
+                <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={(e) => handleSubDragEnd(timerView, e)}>
+                <SortableContext items={(t.subtasks || []).map((s) => s.id)} strategy={verticalListSortingStrategy}>
                 {(t.subtasks || []).map((st, sti) => (
-                  <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: `1px solid ${theme.border}` }}>
+                  <SortableSub key={st.id} id={st.id}>{(subListeners) => (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: `1px solid ${theme.border}` }}>
+                    <div {...subListeners} style={{ color: theme.textSec, opacity: 0.2, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
                     <button onClick={() => toggleSubtask(timerView, st.id)} style={{ width: 22, height: 22, borderRadius: 6, border: st.done ? "none" : `2px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
                     {editingSubId === st.id ? (
                       <input autoFocus value={editingSubVal} onChange={(e) => setEditingSubVal(e.target.value)} onBlur={() => { renameSubtask(timerView, st.id, editingSubVal); setEditingSubId(null); }} onKeyDown={(e) => { if (e.key === "Enter") { renameSubtask(timerView, st.id, editingSubVal); setEditingSubId(null); } if (e.key === "Escape") setEditingSubId(null); }} style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
@@ -1561,7 +1565,10 @@ export default function App() {
                       <button onClick={() => delSubtask(timerView, st.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.trash}</button>
                     </div>
                   </div>
+                  )}</SortableSub>
                 ))}
+                </SortableContext>
+                </DndContext>
                 <SubtaskInput taskId={timerView} onAdd={addSubtask} theme={theme} />
               </div>
             )}
