@@ -1013,6 +1013,7 @@ export default function App() {
   const fileRef = useRef(null);
   const catsRef = useRef(categories); // always-current ref for callbacks
   const tagsRef = useRef(tags);
+  const updateRef = useRef(null);
 
   catsRef.current = categories;
   tagsRef.current = tags;
@@ -1317,7 +1318,6 @@ export default function App() {
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
   const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
   const dragRef = useRef({ taskId: null, catId: null });
-  const updateRef = useRef(null);
   // Touch drag helpers
   const handleTouchStart = (e, type, id, catId, taskId) => {
     const touch = e.touches[0];
