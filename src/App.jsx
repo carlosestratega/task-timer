@@ -222,7 +222,7 @@ function ProfileMenu({ user, onLogin, onLogout, onBackups, syncing, theme, dk })
         {user?.photoURL ? <img src={user.photoURL} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} /> : <span style={{ color: theme.textSec }}>{I.user}</span>}
       </button>
       {open && (
-        <div style={{ position: "absolute", top: 48, right: 0, backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 6, minWidth: 240, boxShadow: dk ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)", zIndex: 50, animation: "fadeIn .15s" }}>
+        <div style={{ position: "absolute", top: 48, right: 0, backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 6, minWidth: 220, maxWidth: "calc(100vw - 32px)", boxShadow: dk ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)", zIndex: 50, animation: "fadeIn .15s" }}>
           {user ? (<>
             <div style={{ padding: "14px 14px 12px", borderBottom: `1px solid ${theme.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -514,6 +514,12 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
 function StatsView({ categories, theme, dk, onClose }) {
   const [period, setPeriod] = useState("today");
   const [filter, setFilter] = useState("all");
+  const initSleep = (() => { try { const r = localStorage.getItem("task-timer-sleep"); if (r) return JSON.parse(r); } catch (e) {} return { from: "00:00", to: "07:00" }; })();
+  const [sleepFrom, setSleepFrom] = useState(initSleep.from);
+  const [sleepTo, setSleepTo] = useState(initSleep.to);
+  const [showSleepSettings, setShowSleepSettings] = useState(false);
+  const saveSleep = (f, t) => { try { localStorage.setItem("task-timer-sleep", JSON.stringify({ from: f, to: t })); } catch (e) {} };
+  const sleepSecs = (() => { const [fh, fm] = sleepFrom.split(":").map(Number); const [th, tm] = sleepTo.split(":").map(Number); let diff = (th * 60 + tm) - (fh * 60 + fm); if (diff < 0) diff += 1440; return diff * 60; })();
   const periods = [{ key: "yesterday", label: "Ayer" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "14days", label: "14 días" }, { key: "month", label: "Mes" }, { key: "all", label: "Total" }];
   const isYesterday = (s) => { const y = new Date(); y.setDate(y.getDate() - 1); return getDateStr(parseSessionDate(s)) === getDateStr(y); };
   const filterS = (s) => { if (period === "today") return isToday(s); if (period === "yesterday") return isYesterday(s); if (period === "week") return isThisWeek(s); if (period === "14days") return isWithinDays(s, 14); if (period === "month") return isWithinDays(s, 30); return true; };
@@ -543,8 +549,20 @@ function StatsView({ categories, theme, dk, onClose }) {
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
           <button onClick={onClose} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Estadísticas</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, flex: 1 }}>Estadísticas</h1>
+          <button onClick={() => setShowSleepSettings((p) => !p)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 8, color: showSleepSettings ? theme.text : theme.textSec, cursor: "pointer", padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>💤 {fmtShort(sleepSecs)}</button>
         </div>
+        {showSleepSettings && (
+          <div style={{ padding: "12px 0", borderBottom: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: theme.textSec }}>Sueño:</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="time" value={sleepFrom} onChange={(e) => { setSleepFrom(e.target.value); saveSleep(e.target.value, sleepTo); }} style={{ padding: "6px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+              <span style={{ color: theme.textSec, fontSize: 13 }}>→</span>
+              <input type="time" value={sleepTo} onChange={(e) => { setSleepTo(e.target.value); saveSleep(sleepFrom, e.target.value); }} style={{ padding: "6px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+            </div>
+            <span style={{ fontSize: 13, color: theme.textSec }}>{fmtShort(sleepSecs)}/noche</span>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 12, padding: "16px 0", overflowX: "auto" }}>
           {[{ label: "Racha", val: `${getStreak()}d`, icon: I.fire, color: "#f59e0b" }, { label: "Media diaria", val: fmtShort(avgDaily), icon: I.clock, color: "#6366f1" }, { label: "Días activos", val: `${daysWithData}`, icon: I.chart, color: "#10b981" }].map((s, i) => (
             <div key={i} style={{ flex: "0 0 auto", padding: "14px 18px", borderRadius: 14, backgroundColor: theme.card, border: `1px solid ${theme.border}`, minWidth: 110, textAlign: "center" }}>
@@ -658,7 +676,25 @@ function StatsView({ categories, theme, dk, onClose }) {
           const totalTracked = legendItems.reduce((a, [, s]) => a + s, 0);
           // Base for percentages: today = elapsed so far, yesterday = 24h
           const baseSecs = period === "yesterday" ? 86400 : (() => { const n = new Date(); return n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds(); })();
-          const untracked = Math.max(0, baseSecs - totalTracked);
+          // Calculate sleep overlap with elapsed time
+          const calcSleepOverlap = () => {
+            const [fh, fm] = sleepFrom.split(":").map(Number);
+            const [th, tm] = sleepTo.split(":").map(Number);
+            let sf = fh * 3600 + fm * 60, st = th * 3600 + tm * 60;
+            if (st <= sf) st += 86400; // crosses midnight
+            if (period === "yesterday") return Math.min(st - sf, 86400);
+            const elapsed = baseSecs;
+            // Sleep ranges that overlap with 0..elapsed
+            let overlap = 0;
+            // Range 1: sf..st
+            const overlapStart = Math.max(sf, 0), overlapEnd = Math.min(st, elapsed);
+            if (overlapEnd > overlapStart) overlap += overlapEnd - overlapStart;
+            // If crosses midnight, also check sf-86400..st-86400
+            if (sf > 86400 - 1) { const os2 = Math.max(sf - 86400, 0), oe2 = Math.min(st - 86400, elapsed); if (oe2 > os2) overlap += oe2 - os2; }
+            return Math.max(0, overlap);
+          };
+          const sleepInDay = calcSleepOverlap();
+          const untracked = Math.max(0, baseSecs - totalTracked - sleepInDay);
 
           return (
             <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
@@ -684,14 +720,26 @@ function StatsView({ categories, theme, dk, onClose }) {
                     </div>
                   </div>
                 ))}
+                {sleepInDay > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, opacity: 0.6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: "#6366f1" }} />
+                      <span style={{ color: theme.textSec }}>💤 Sueño</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: theme.textSec }}>{fmtShort(Math.round(sleepInDay))}</span>
+                      <span style={{ color: theme.textSec, fontSize: 11 }}>{baseSecs > 0 ? Math.round((sleepInDay / baseSecs) * 100) : 0}%</span>
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, opacity: 0.5 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: dk ? "#1a1a1a" : "#ddd" }} />
                     <span style={{ color: theme.textSec }}>Sin registro</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: theme.textSec }}>{fmtShort(Math.round(untracked))}</span>
-                    <span style={{ color: theme.textSec, fontSize: 11 }}>{baseSecs > 0 ? Math.round((untracked / baseSecs) * 100) : 0}%</span>
+                    <span style={{ color: theme.textSec }}>{fmtShort(Math.max(0, Math.round(untracked)))}</span>
+                    <span style={{ color: theme.textSec, fontSize: 11 }}>{baseSecs > 0 ? Math.round((Math.max(0, untracked) / baseSecs) * 100) : 0}%</span>
                   </div>
                 </div>
               </div>
@@ -699,15 +747,16 @@ function StatsView({ categories, theme, dk, onClose }) {
           );
         })()}
         {period === "week" && (() => {
-          // Weekly donut: 168h total, categories + sin actividad
+          // Weekly donut: 168h total, categories + sleep + sin actividad
           const WEEK_SECS = 168 * 3600;
+          const weeklySleep = sleepSecs * 7;
           const catTotals = categories.map((cat) => {
             const secs = cat.tasks.reduce((a, task) => a + (task.sessions || []).filter(isThisWeek).reduce((s, x) => s + x.duration, 0), 0);
             return { id: cat.id, name: cat.name, color: cat.color, secs };
           }).filter((c) => c.secs > 0).sort((a, b) => b.secs - a.secs);
           const totalTracked = catTotals.reduce((a, c) => a + c.secs, 0);
-          const untracked = WEEK_SECS - totalTracked;
-          const slices = [...catTotals, { id: "_free", name: "Sin actividad", color: dk ? "#1a1a1a" : "#ddd", secs: untracked }];
+          const untracked = Math.max(0, WEEK_SECS - totalTracked - weeklySleep);
+          const slices = [...catTotals, ...(weeklySleep > 0 ? [{ id: "_sleep", name: "Sueño", color: "#6366f1", secs: weeklySleep }] : []), { id: "_free", name: "Sin actividad", color: dk ? "#1a1a1a" : "#ddd", secs: untracked }];
           // Build donut
           const cx = 100, cy = 100, R = 85, r = 55;
           let cumAngle = -Math.PI / 2;
@@ -720,9 +769,10 @@ function StatsView({ categories, theme, dk, onClose }) {
             cumAngle += sweep;
             const largeArc = (a1 - a0) > Math.PI ? 1 : 0;
             const path = `M${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)} L${cx + R * Math.cos(a0)},${cy + R * Math.sin(a0)} A${R},${R},0,${largeArc},1,${cx + R * Math.cos(a1)},${cy + R * Math.sin(a1)} L${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)} A${r},${r},0,${largeArc},0,${cx + r * Math.cos(a0)},${cy + r * Math.sin(a0)}Z`;
-            return <path key={si} d={path} fill={sl.color} opacity={sl.id === "_free" ? 0.5 : 0.85} />;
+            return <path key={si} d={path} fill={sl.color} opacity={sl.id === "_free" ? 0.5 : (sl.id === "_sleep" ? 0.35 : 0.85)} />;
           });
-          const pct = Math.round((totalTracked / WEEK_SECS) * 100);
+          const awakeSecs = WEEK_SECS - weeklySleep;
+          const pct = awakeSecs > 0 ? Math.round((totalTracked / awakeSecs) * 100) : 0;
 
           return (
             <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
@@ -731,7 +781,7 @@ function StatsView({ categories, theme, dk, onClose }) {
                 <svg viewBox="0 0 200 200" width="220" height="220">
                   {donutArcs}
                   <text x={cx} y={cy - 6} textAnchor="middle" fill={theme.text} fontSize="16" fontWeight="700">{fmtShort(totalTracked)}</text>
-                  <text x={cx} y={cy + 10} textAnchor="middle" fill={theme.textSec} fontSize="9">{pct}% de 168h</text>
+                  <text x={cx} y={cy + 10} textAnchor="middle" fill={theme.textSec} fontSize="9">{pct}% del tiempo despierto</text>
                 </svg>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
@@ -747,6 +797,18 @@ function StatsView({ categories, theme, dk, onClose }) {
                     </div>
                   </div>
                 ))}
+                {weeklySleep > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, opacity: 0.6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: "#6366f1" }} />
+                      <span style={{ color: theme.textSec }}>💤 Sueño</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: theme.textSec }}>{fmtShort(weeklySleep)}</span>
+                      <span style={{ color: theme.textSec, fontSize: 11 }}>{Math.round((weeklySleep / WEEK_SECS) * 100)}%</span>
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, opacity: 0.5 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: dk ? "#1a1a1a" : "#ddd" }} />
@@ -1608,8 +1670,9 @@ export default function App() {
                               <div style={{ transform: showSubsMain.has(t.id) ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", display: "flex" }}>{I.chev}</div>
                               Subtareas ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})
                             </button>
-                            {showSubsMain.has(t.id) && (t.subtasks || []).map((st) => (
-                              <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }}>
+                            {showSubsMain.has(t.id) && (t.subtasks || []).map((st, sti) => (
+                              <div key={st.id} draggable onDragStart={(e) => { e.stopPropagation(); dragRef.current = { subId: st.id, taskId: t.id }; e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.4"; }} onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; setDragOverId(null); dragRef.current = { taskId: null, catId: null }; }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (dragRef.current.subId && dragOverId !== st.id) setDragOverId(st.id); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverId(null); const from = dragRef.current; if (!from.subId || from.subId === st.id || from.taskId !== t.id) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((tk) => { if (tk.id !== t.id) return tk; const subs = [...(tk.subtasks || [])]; const fi = subs.findIndex((s) => s.id === from.subId); const toI = subs.findIndex((s) => s.id === st.id); if (fi < 0 || toI < 0) return tk; const [moved] = subs.splice(fi, 1); subs.splice(toI, 0, moved); return { ...tk, subtasks: subs }; }) }))); }} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0", borderTop: dragOverId === st.id && dragRef.current.subId ? `2px solid ${cat.color}` : "none" }}>
+                                <div style={{ color: theme.textSec, opacity: 0.2, cursor: "grab", display: "flex", flexShrink: 0 }}>{I.grip}</div>
                                 <button onClick={() => toggleSubtask(t.id, st.id)} style={{ width: 18, height: 18, borderRadius: 5, border: st.done ? "none" : `1.5px solid ${theme.border}`, backgroundColor: st.done ? "#10b981" : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{st.done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</button>
                                 <span style={{ fontSize: 13, textDecoration: st.done ? "line-through" : "none", color: st.done ? theme.textSec : theme.text }}>{st.name}</span>
                               </div>
