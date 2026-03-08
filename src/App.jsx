@@ -222,7 +222,7 @@ function ProfileMenu({ user, onLogin, onLogout, onBackups, syncing, theme, dk })
         {user?.photoURL ? <img src={user.photoURL} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} /> : <span style={{ color: theme.textSec }}>{I.user}</span>}
       </button>
       {open && (
-        <div style={{ position: "absolute", top: 48, right: 0, backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 6, minWidth: 220, maxWidth: "calc(100vw - 32px)", boxShadow: dk ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)", zIndex: 50, animation: "fadeIn .15s" }}>
+        <div style={{ position: "fixed", top: 70, left: "50%", transform: "translateX(-50%)", backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 6, width: "calc(100% - 32px)", maxWidth: 340, boxShadow: dk ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)", zIndex: 50, animation: "fadeIn .15s" }}>
           {user ? (<>
             <div style={{ padding: "14px 14px 12px", borderBottom: `1px solid ${theme.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
