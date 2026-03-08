@@ -93,6 +93,7 @@ const I = {
   paste: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16,4h2a2,2,0,0,1,2,2V20a2,2,0,0,1-2,2H6a2,2,0,0,1-2-2V6A2,2,0,0,1,6,4H8" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="8" y1="16" x2="16" y2="16" /></svg>,
   sort: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="12" x2="12" y2="12" /><line x1="4" y1="18" x2="8" y2="18" /><polyline points="18,14 21,17 18,20" /><line x1="21" y1="17" x2="21" y2="7" /></svg>,
   grip: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" /></svg>,
+  nfc: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6,8.32a7.43,7.43,0,0,1,0,7.36" /><path d="M9.46,6.21a11.76,11.76,0,0,1,0,11.58" /><path d="M12.91,4.1a16.08,16.08,0,0,1,0,15.8" /><path d="M16.37,2a20.4,20.4,0,0,1,0,20" /></svg>,
 };
 
 const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16", "#eab308", "#a855f7"];
@@ -1170,6 +1171,45 @@ export default function App() {
     }
   }, []);
 
+  // NFC: handle URL param ?nfc=taskId
+  const nfcHandled = useRef(false);
+  useEffect(() => {
+    if (nfcHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const nfcId = params.get("nfc");
+    if (!nfcId) return;
+    // Wait for categories to be loaded
+    const found = categories.flatMap((c) => c.tasks).find((t) => t.id === nfcId);
+    if (!found && !initDone.current) return; // wait for cloud
+    if (found) {
+      nfcHandled.current = true;
+      // Clean URL
+      window.history.replaceState({}, "", window.location.pathname);
+      // Toggle timer
+      setTimeout(() => { if (activeId === nfcId) { doStop(nfcId); } else { doStart(nfcId); } }, 300);
+    } else if (initDone.current) {
+      nfcHandled.current = true;
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [categories, activeId]);
+
+  const writeNfc = async (taskId, taskName) => {
+    if (!("NDEFReader" in window)) {
+      // Fallback: copy URL to clipboard
+      const url = `${window.location.origin}${window.location.pathname}?nfc=${taskId}`;
+      try { await navigator.clipboard.writeText(url); setModal({ title: "URL copiada", message: `Tu navegador no soporta escritura NFC. Programa este enlace manualmente en tu tag NFC:\n\n${url}`, confirmLabel: "OK", confirmColor: "#6366f1", onConfirm: () => setModal(null) }); } catch (e) { prompt("Copia esta URL y prográmala en tu tag NFC:", url); }
+      return;
+    }
+    try {
+      setModal({ title: "Acerca el tag NFC", message: `Acerca tu etiqueta NFC al móvil para asociarla a "${taskName}"...` });
+      const writer = new window.NDEFReader();
+      await writer.write({ records: [{ recordType: "url", data: `${window.location.origin}${window.location.pathname}?nfc=${taskId}` }] });
+      setModal({ title: "✓ Tag NFC grabado", message: `"${taskName}" asociada. Acerca el tag para iniciar/parar el timer.`, confirmLabel: "OK", confirmColor: "#10b981", onConfirm: () => setModal(null) });
+    } catch (e) {
+      if (e.name !== "AbortError") setModal({ title: "Error NFC", message: e.message || "No se pudo escribir el tag.", confirmLabel: "OK", confirmColor: "#ef4444", onConfirm: () => setModal(null) });
+    }
+  };
+
   useEffect(() => { const h = (e) => { if (activeId) { e.preventDefault(); e.returnValue = ""; } }; window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h); }, [activeId]);
 
   // Theme
@@ -1395,6 +1435,7 @@ export default function App() {
               <button onClick={() => toggleTimer(timerView)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", backgroundColor: isActive ? (dk ? "#fff" : "#000") : c.color, color: isActive ? (dk ? "#000" : "#fff") : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: `0 0 40px ${isActive ? (dk ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)") : c.color + "44"}` }}>
                 {isActive ? I.pause : I.play}
               </button>
+              <button onClick={() => writeNfc(timerView, t.name)} style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", padding: "6px 14px", fontSize: 12 }}>{I.nfc} NFC</button>
             </div>
             {/* Scrollable content */}
             <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px 40px", WebkitOverflowScrolling: "touch" }}>
@@ -1684,6 +1725,7 @@ export default function App() {
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
                           <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onSave: (n, _c, g) => editTaskSave(t.id, n, _c, g) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
                           <button onClick={(e) => { e.stopPropagation(); const others = categories.filter((x) => x.id !== cat.id); if (others.length === 0) return; setModal({ title: "Mover tarea", message: `"${t.name}" a:`, options: others.map((o) => ({ label: o.name, color: o.color, onSelect: () => moveTaskToCat(t.id, o.id) })) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.move}</button>
+                          <button onClick={(e) => { e.stopPropagation(); writeNfc(t.id, t.name); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.nfc}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Completar?", message: `"${t.name}" → completadas.`, confirmLabel: "Completar", confirmColor: "#10b981", onConfirm: () => completeTask(t.id) }); }} style={{ background: "none", border: "none", color: "#10b981", cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.check}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Resetear?", message: `Borrar tiempo de "${t.name}".`, confirmLabel: "Resetear", confirmColor: "#f59e0b", onConfirm: () => resetTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.reset}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Eliminar?", message: `"${t.name}" permanentemente.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
