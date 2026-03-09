@@ -527,6 +527,62 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
 }
 
 // ─── Stats View ────────────────────────────────────────
+function BulkDeleteView({ categories, onDelete, onCancel, theme, dk }) {
+  const [selected, setSelected] = useState(new Set());
+  const toggle = (id) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allTasks = categories.flatMap((c) => c.tasks.map((t) => ({ ...t, catName: c.name, catColor: c.color })));
+  const selectAll = () => setSelected(new Set(allTasks.map((t) => t.id)));
+  const selectNone = () => setSelected(new Set());
+  const selectCat = (catId) => { const ids = categories.find((c) => c.id === catId)?.tasks.map((t) => t.id) || []; setSelected((p) => { const n = new Set(p); ids.forEach((id) => n.add(id)); return n; }); };
+  const deselectCat = (catId) => { const ids = categories.find((c) => c.id === catId)?.tasks.map((t) => t.id) || []; setSelected((p) => { const n = new Set(p); ids.forEach((id) => n.delete(id)); return n; }); };
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+          <button onClick={onCancel} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, flex: 1 }}>Papelera</h1>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={selectAll} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>Todas</button>
+            <button onClick={selectNone} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>Ninguna</button>
+          </div>
+        </div>
+        <div style={{ padding: "12px 0" }}>
+          {categories.map((cat) => {
+            const catTaskIds = cat.tasks.map((t) => t.id);
+            const allSelected = catTaskIds.length > 0 && catTaskIds.every((id) => selected.has(id));
+            if (cat.tasks.length === 0) return null;
+            return (
+              <div key={cat.id} style={{ marginBottom: 16 }}>
+                <div onClick={() => allSelected ? deselectCat(cat.id) : selectCat(cat.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer" }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 5, border: allSelected ? "none" : `2px solid ${theme.border}`, backgroundColor: allSelected ? cat.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{allSelected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</div>
+                  <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: cat.color }} />
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>{cat.name}</span>
+                  <span style={{ fontSize: 13, color: theme.textSec }}>{cat.tasks.length}</span>
+                </div>
+                {cat.tasks.map((t) => (
+                  <div key={t.id} onClick={() => toggle(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", marginBottom: 2, borderRadius: 8, backgroundColor: selected.has(t.id) ? "#ef444415" : "transparent", cursor: "pointer" }}>
+                    <div style={{ width: 18, height: 18, borderRadius: 4, border: selected.has(t.id) ? "none" : `1.5px solid ${theme.border}`, backgroundColor: selected.has(t.id) ? "#ef4444" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{selected.has(t.id) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none", color: t.completed ? theme.textSec : theme.text }}>{t.name}</div>
+                      <div style={{ fontSize: 12, color: theme.textSec, marginTop: 1 }}>{fmtShort(t.totalSeconds)} · {(t.sessions || []).length} ses.{t.completed ? " · ✓" : ""}{(t.subtasks || []).length > 0 ? ` · ${(t.subtasks || []).filter((s) => s.done).length}/${(t.subtasks || []).length} sub` : ""}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {allTasks.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay tareas</div>}
+        </div>
+        {selected.size > 0 && (
+          <div style={{ position: "sticky", bottom: 0, padding: "16px 0", backgroundColor: theme.bg, borderTop: `1px solid ${theme.border}` }}>
+            <button onClick={() => onDelete([...selected])} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", backgroundColor: "#ef4444", color: "#fff", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>Eliminar {selected.size} tarea{selected.size !== 1 ? "s" : ""}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StatsView({ categories, theme, dk, onClose }) {
   const [period, setPeriod] = useState("today");
   const [filter, setFilter] = useState("all");
@@ -1019,6 +1075,7 @@ export default function App() {
   const [backups, setBackups] = useState([]);
   const [searchQ, setSearchQ] = useState("");
   const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1386,6 +1443,11 @@ export default function App() {
     setExpanded((p) => new Set([...p, catId]));
     setShowBulkAdd(false);
   };
+  const bulkDelete = (taskIds) => {
+    taskIds.forEach((id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); } if (timerView === id) setTimerView(null); });
+    update((p) => p.map((c) => ({ ...c, tasks: c.tasks.filter((t) => !taskIds.includes(t.id)) })));
+    setShowBulkDelete(false);
+  };
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
@@ -1456,6 +1518,7 @@ export default function App() {
 
       {/* Bulk Add */}
       {showBulkAdd && <BulkAddModal categories={categories} onAdd={bulkAdd} onCancel={() => setShowBulkAdd(false)} theme={theme} dk={dk} />}
+      {showBulkDelete && <BulkDeleteView categories={categories} onDelete={bulkDelete} onCancel={() => setShowBulkDelete(false)} theme={theme} dk={dk} />}
 
       {/* Timer fullscreen */}
       {timerView && atd?.task && (() => {
@@ -1667,6 +1730,7 @@ export default function App() {
           <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
             <button onClick={() => { setShowNewCat(true); setShowNewTask(null); }} style={{ flex: 1, background: theme.accent, border: "none", borderRadius: 10, color: dk ? "#000" : "#fff", cursor: "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, fontWeight: 600 }}>{I.plus}<span>Nueva categoría</span></button>
             <button onClick={() => setShowBulkAdd(true)} title="Añadir rápido" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.paste}</button>
+            <button onClick={() => setShowBulkDelete(true)} title="Papelera" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.trash}</button>
             <button onClick={exportData} title="Exportar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.dl}</button>
             <button onClick={() => fileRef.current?.click()} title="Importar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.ul}</button>
             <input ref={fileRef} type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
