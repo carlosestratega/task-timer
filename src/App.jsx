@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { auth, googleProvider, db } from "./firebase";
@@ -453,13 +453,13 @@ function SubtaskInput({ taskId, onAdd, theme }) {
 function SortableTask({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, position: "relative", zIndex: isDragging ? 10 : "auto" };
-  return <div ref={setNodeRef} style={style} {...attributes}>{children(listeners)}</div>;
+  return <div ref={setNodeRef} style={style}>{children(listeners, attributes)}</div>;
 }
 
 function SortableSub({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
-  return <div ref={setNodeRef} style={style} {...attributes}>{children(listeners)}</div>;
+  return <div ref={setNodeRef} style={style}>{children(listeners, attributes)}</div>;
 }
 
 function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
@@ -1387,7 +1387,7 @@ export default function App() {
 
   // dnd-kit sensors - only activate from grip handle
   const dndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   );
   const handleTaskDragEnd = (catId, event) => {
@@ -1893,7 +1893,7 @@ export default function App() {
         @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.4 } }
         @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
         * { box-sizing:border-box; -webkit-tap-highlight-color:transparent }
-        html,body { overscroll-behavior-y:none; scroll-behavior:smooth }
+        html,body { overscroll-behavior-y:none }
         input::placeholder { color:${theme.textSec}88 }
         input { font-size:16px !important }
         button { cursor:pointer }
