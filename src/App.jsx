@@ -1286,47 +1286,6 @@ export default function App() {
   // Theme
   useEffect(() => { saveTheme(dk); document.body.style.background = dk ? "#0a0a0a" : "#fafafa"; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dk ? "#0a0a0a" : "#fafafa"); }, [dk]);
 
-  // Smooth wheel scroll: normalize delta + momentum
-  useEffect(() => {
-    let animId = null;
-    let velocity = 0;
-    let currentScroller = null;
-    const friction = 0.92;
-    const maxDelta = 60;
-    const getScroller = (el) => {
-      let node = el;
-      while (node && node !== document.body) {
-        const style = window.getComputedStyle(node);
-        if ((style.overflow === "auto" || style.overflow === "scroll" || style.overflowY === "auto" || style.overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node;
-        node = node.parentElement;
-      }
-      return document.scrollingElement || document.documentElement;
-    };
-    const onWheel = (e) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      if (e.target.closest("input, textarea, select")) return;
-      e.preventDefault();
-      currentScroller = getScroller(e.target);
-      const raw = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaY;
-      const clamped = Math.sign(raw) * Math.min(Math.abs(raw), maxDelta);
-      velocity += clamped * 0.6;
-      if (!animId) {
-        const tick = () => {
-          if (Math.abs(velocity) > 0.5 && currentScroller) {
-            currentScroller.scrollTop += velocity;
-            velocity *= friction;
-            animId = requestAnimationFrame(tick);
-          } else {
-            velocity = 0;
-            animId = null;
-          }
-        };
-        animId = requestAnimationFrame(tick);
-      }
-    };
-    window.addEventListener("wheel", onWheel, { passive: false });
-    return () => { window.removeEventListener("wheel", onWheel); if (animId) cancelAnimationFrame(animId); };
-  }, []);
   const theme = dk
     ? { bg: "#0a0a0a", card: "#141414", border: "#252525", text: "#f5f5f5", textSec: "#737373", accent: "#ffffff", surface: "#1c1c1c" }
     : { bg: "#fafafa", card: "#ffffff", border: "#e5e5e5", text: "#0a0a0a", textSec: "#737373", accent: "#000000", surface: "#f0f0f0" };
