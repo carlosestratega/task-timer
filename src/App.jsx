@@ -97,9 +97,15 @@ const I = {
   sort: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="12" x2="12" y2="12" /><line x1="4" y1="18" x2="8" y2="18" /><polyline points="18,14 21,17 18,20" /><line x1="21" y1="17" x2="21" y2="7" /></svg>,
   grip: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" /></svg>,
   nfc: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6,8.32a7.43,7.43,0,0,1,0,7.36" /><path d="M9.46,6.21a11.76,11.76,0,0,1,0,11.58" /><path d="M12.91,4.1a16.08,16.08,0,0,1,0,15.8" /><path d="M16.37,2a20.4,20.4,0,0,1,0,20" /></svg>,
+  list: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1" fill="currentColor" /><circle cx="4" cy="12" r="1" fill="currentColor" /><circle cx="4" cy="18" r="1" fill="currentColor" /></svg>,
 };
 
-const CAT_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16", "#eab308", "#a855f7"];
+const CAT_COLORS = [
+  "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316",
+  "#06b6d4", "#84cc16", "#eab308", "#a855f7", "#e11d48", "#0891b2", "#65a30d", "#c026d3",
+  "#d946ef", "#0ea5e9", "#22c55e", "#fb923c", "#f43f5e", "#2dd4bf", "#a3e635", "#818cf8",
+  "#f472b6", "#34d399", "#fbbf24", "#38bdf8", "#c084fc", "#fb7185", "#4ade80", "#facc15",
+];
 
 const defaultCategories = [
   { id: "cat-1", name: "Contenido", color: "#6366f1", tasks: [
@@ -578,6 +584,77 @@ function BulkDeleteView({ categories, onDelete, onCancel, theme, dk }) {
             <button onClick={() => onDelete([...selected])} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", backgroundColor: "#ef4444", color: "#fff", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>Eliminar {selected.size} tarea{selected.size !== 1 ? "s" : ""}</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function OverviewView({ categories, onClose, theme, dk }) {
+  const [copyMsg, setCopyMsg] = useState(false);
+  const allText = categories.map((c) => {
+    const lines = [`── ${c.name} ──`];
+    c.tasks.forEach((t) => {
+      const status = t.completed ? " ✓" : "";
+      const time = t.totalSeconds > 0 ? ` (${fmtShort(t.totalSeconds)})` : "";
+      lines.push(`${t.name}${time}${status}`);
+      (t.subtasks || []).forEach((st) => {
+        lines.push(`  ${st.done ? "✓" : "·"} ${st.name}`);
+      });
+    });
+    return lines.join("\n");
+  }).join("\n\n");
+
+  const copyAll = () => {
+    navigator.clipboard.writeText(allText).then(() => { setCopyMsg(true); setTimeout(() => setCopyMsg(false), 2000); }).catch(() => {});
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, flex: 1 }}>Vista general</h1>
+          <button onClick={copyAll} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: copyMsg ? "#10b981" : theme.surface, color: copyMsg ? "#fff" : theme.text, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>{copyMsg ? "✓ Copiado" : "Copiar"}</button>
+        </div>
+        <div style={{ padding: "16px 0 100px" }}>
+          {categories.map((cat) => (
+            <div key={cat.id} style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: cat.color }} />
+                <span style={{ fontSize: 16, fontWeight: 700 }}>{cat.name}</span>
+                <span style={{ fontSize: 13, color: theme.textSec }}>{cat.tasks.length}</span>
+              </div>
+              {cat.tasks.filter((t) => !t.completed).map((t) => (
+                <div key={t.id} style={{ marginBottom: 8, paddingLeft: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{t.name}</span>
+                    {t.totalSeconds > 0 && <span style={{ fontSize: 12, color: cat.color, fontWeight: 600 }}>{fmtShort(t.totalSeconds)}</span>}
+                    {t.goalDaily > 0 && <span style={{ fontSize: 11, color: "#6366f1" }}>{I.target}</span>}
+                  </div>
+                  {(t.subtasks || []).length > 0 && (
+                    <div style={{ paddingLeft: 12, marginTop: 3 }}>
+                      {(t.subtasks || []).map((st) => (
+                        <div key={st.id} style={{ fontSize: 13, color: st.done ? theme.textSec : theme.text, padding: "1px 0", display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ color: st.done ? "#10b981" : theme.textSec, fontSize: 11 }}>{st.done ? "✓" : "·"}</span>
+                          <span style={{ textDecoration: st.done ? "line-through" : "none" }}>{st.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {cat.tasks.filter((t) => t.completed).length > 0 && (
+                <div style={{ paddingLeft: 20, marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 4 }}>Completadas:</div>
+                  {cat.tasks.filter((t) => t.completed).map((t) => (
+                    <div key={t.id} style={{ fontSize: 13, color: theme.textSec, padding: "1px 0", textDecoration: "line-through" }}>{t.name} ({fmtShort(t.totalSeconds)})</div>
+                  ))}
+                </div>
+              )}
+              {cat.tasks.length === 0 && <div style={{ paddingLeft: 20, fontSize: 13, color: theme.textSec, fontStyle: "italic" }}>Sin tareas</div>}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1076,6 +1153,7 @@ export default function App() {
   const [searchQ, setSearchQ] = useState("");
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [showOverview, setShowOverview] = useState(false);
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1520,6 +1598,7 @@ export default function App() {
       {/* Bulk Add */}
       {showBulkAdd && <BulkAddModal categories={categories} onAdd={bulkAdd} onCancel={() => setShowBulkAdd(false)} theme={theme} dk={dk} />}
       {showBulkDelete && <BulkDeleteView categories={categories} onDelete={bulkDelete} onCancel={() => setShowBulkDelete(false)} theme={theme} dk={dk} />}
+      {showOverview && <OverviewView categories={categories} onClose={() => setShowOverview(false)} theme={theme} dk={dk} />}
 
       {/* Timer fullscreen */}
       {timerView && atd?.task && (() => {
@@ -1718,6 +1797,7 @@ export default function App() {
               <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} onBackups={loadBackups} syncing={syncing} theme={theme} dk={dk} />
               <button onClick={() => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id)))} title={expanded.size > 0 ? "Contraer todas" : "Expandir todas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{expanded.size > 0 ? I.collapseAll : I.chev}</button>
               <button onClick={() => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); })} title={showSubsMain.size > 0 ? "Cerrar subtareas" : "Abrir subtareas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: showSubsMain.size > 0 ? theme.text : theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.subtasks}</button>
+              <button onClick={() => setShowOverview(true)} title="Vista general" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.list}</button>
               <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
               <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
             </div>
