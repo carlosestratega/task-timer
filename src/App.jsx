@@ -741,8 +741,9 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
         ))}
         <span style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length} tareas</span>
       </div>
+      <div className="kanban-cols">
       {cols.map((col) => (
-        <div key={col.key} style={{ marginBottom: 20 }}>
+        <div key={col.key} className="kanban-col" style={{ marginBottom: 20, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <span style={{ fontSize: 14 }}>{col.emoji}</span>
             <span style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.label}</span>
@@ -777,6 +778,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
           ))}
         </div>
       ))}
+      </div>
     </div>
   );
 }
@@ -1847,6 +1849,27 @@ export default function App() {
               </div>
             )}
 
+            {/* Dates & Status */}
+            <div style={{ marginTop: 20, width: "90%", maxWidth: 320 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
+                <div style={{ flex: 1, minWidth: 130 }}>
+                  <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>📅 Planificada</div>
+                  <input type="date" value={t.plannedDate || ""} onChange={(e) => update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => tk.id === timerView ? { ...tk, plannedDate: e.target.value || null } : tk) })))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 130 }}>
+                  <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>⏰ Límite</div>
+                  <input type="date" value={t.dueDate || ""} onChange={(e) => update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => tk.id === timerView ? { ...tk, dueDate: e.target.value || null } : tk) })))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.dueDate && t.dueDate < getDateStr() ? "#ef4444" : theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 4 }}>Estado</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {[{ key: "todo", label: "📋 Por hacer" }, { key: "doing", label: "⚡ Ejecución" }, { key: "validating", label: "🔍 Validación" }, { key: "done", label: "✅ Hecho" }].map((s) => {
+                  const current = t.kanbanStatus || (t.completed ? "done" : (t.totalSeconds > 0 ? "doing" : "todo"));
+                  return <button key={s.key} onClick={() => { update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => { if (tk.id !== timerView) return tk; if (s.key === "done") return { ...tk, kanbanStatus: s.key, completed: true, completedAt: new Date().toISOString() }; return { ...tk, kanbanStatus: s.key, completed: false, completedAt: null }; }) }))); if (s.key === "done") setTimerView(null); }} style={{ padding: "5px 10px", borderRadius: 8, border: current === s.key ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: current === s.key ? `${c.color}15` : "transparent", color: current === s.key ? c.color : theme.textSec, fontSize: 12, cursor: "pointer", fontWeight: current === s.key ? 600 : 400 }}>{s.label}</button>;
+                })}
+              </div>
+            </div>
+
             {/* Tags */}
             {(() => {
               // Sort tags by most recent use in this category
@@ -1997,7 +2020,7 @@ export default function App() {
         );
       })()}
 
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
+      <div style={{ maxWidth: mainView === "kanban" ? 1200 : 640, margin: "0 auto", padding: "0 16px", transition: "max-width .3s" }}>
         {/* Header */}
         <div style={{ padding: "16px 0 8px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -2018,16 +2041,23 @@ export default function App() {
             {searchQ && <button onClick={() => setSearchQ("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: theme.textSec, cursor: "pointer", display: "flex", padding: 4 }}>{I.x}</button>}
           </div>
           {/* Toolbar */}
-          <div style={{ marginTop: 8, display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
-            <button onClick={() => { setShowNewCat(true); setShowNewTask(null); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.plus} Categoría</button>
-            <button onClick={() => setShowBulkAdd(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.paste} Pegar</button>
-            <button onClick={() => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${selectMode ? "#ef4444" : theme.border}`, background: "none", color: selectMode ? "#ef4444" : theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.selectAll} Seleccionar</button>
-            <button onClick={() => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id)))} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{expanded.size > 0 ? I.collapseAll : I.chev} {expanded.size > 0 ? "Cerrar" : "Abrir"}</button>
-            <button onClick={() => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); })} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: showSubsMain.size > 0 ? theme.text : theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.subtasks} Subs</button>
-            <button onClick={() => setShowOverview(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.list} Vista</button>
-            <button onClick={() => setShowBulkDelete(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.trash} Papelera</button>
-            <button onClick={exportData} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.dl} Export</button>
-            <button onClick={() => fileRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.ul} Import</button>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4 }}>
+            {[
+              { onClick: () => { setShowNewCat(true); setShowNewTask(null); }, icon: I.plus, label: "Categoría" },
+              { onClick: () => setShowBulkAdd(true), icon: I.paste, label: "Pegar" },
+              { onClick: () => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }, icon: I.selectAll, label: "Seleccionar", active: selectMode },
+              { onClick: () => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id))), icon: expanded.size > 0 ? I.collapseAll : I.chev, label: expanded.size > 0 ? "Cerrar" : "Abrir" },
+              { onClick: () => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); }), icon: I.subtasks, label: "Subs", active: showSubsMain.size > 0 },
+              { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
+              { onClick: () => setShowBulkDelete(true), icon: I.trash },
+              { onClick: exportData, icon: I.dl },
+              { onClick: () => fileRef.current?.click(), icon: I.ul },
+            ].map((b, i) => (
+              <button key={i} onClick={b.onClick} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 4px", borderRadius: 8, border: `1px solid ${b.active ? "#ef4444" : theme.border}`, background: "none", color: b.active ? "#ef4444" : theme.textSec, fontSize: 10, cursor: "pointer" }}>
+                {b.icon}
+                {b.label && <span>{b.label}</span>}
+              </button>
+            ))}
             <input ref={fileRef} type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
           </div>
         </div>
@@ -2228,6 +2258,10 @@ export default function App() {
         input { font-size:16px !important }
         button { cursor:pointer }
         button:active { transform:scale(.97) }
+        @media (min-width: 768px) {
+          .kanban-cols { display:flex; gap:12px; align-items:flex-start }
+          .kanban-col { flex:1; min-width:0 }
+        }
       `}</style>
     </div>
   );
