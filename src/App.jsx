@@ -120,8 +120,8 @@ const defaultCategories = [
 ];
 
 const ensureTask = (t) => {
-  const { currentSeconds, ...rest } = t; // strip currentSeconds from old data
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, ...rest };
+  const { currentSeconds, ...rest } = t;
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, ...rest };
 };
 
 const getWeekStart = () => {
@@ -283,14 +283,19 @@ function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel
   );
 }
 
-function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange }) {
+function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange, dueDate: initDue, plannedDate: initPlanned, recurring: initRecurring, onDatesChange }) {
   const [val, setVal] = useState(value || "");
   const [col, setCol] = useState(color || "");
   const [goal, setGoal] = useState(goalDaily ? Math.round(goalDaily / 60) : 0);
+  const [due, setDue] = useState(initDue || "");
+  const [planned, setPlanned] = useState(initPlanned || "");
+  const [rec, setRec] = useState(initRecurring || []);
+  const DAYS = ["D", "L", "M", "X", "J", "V", "S"];
+  const toggleRec = (d) => setRec((p) => p.includes(d) ? p.filter((x) => x !== d) : [...p, d].sort());
   return (
     <Modal title={title} onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSave(val, col, goal * 60); }} placeholder="Nombre..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
+        <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null); }} placeholder="Nombre..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
         {onColorChange && (
           <div>
             <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 8 }}>Color</div>
@@ -303,12 +308,34 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
           <div>
             <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>{I.target} Objetivo diario (minutos)</div>
             <input type="number" value={goal} onChange={(e) => setGoal(Math.max(0, parseInt(e.target.value) || 0))} min="0" step="5" placeholder="0 = sin objetivo" style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none", width: "100%" }} />
-            <div style={{ fontSize: 12, color: theme.textSec, marginTop: 4 }}>0 = sin objetivo</div>
           </div>
         )}
+        {onDatesChange && (<>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha planificada</div>
+            <input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", width: "100%" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha límite</div>
+            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", width: "100%" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Repetir</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {DAYS.map((d, i) => (
+                <button key={i} onClick={() => toggleRec(i)} style={{ width: 36, height: 36, borderRadius: 8, border: rec.includes(i) ? "none" : `1px solid ${theme.border}`, backgroundColor: rec.includes(i) ? "#6366f1" : "transparent", color: rec.includes(i) ? "#fff" : theme.textSec, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{d}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <button onClick={() => setRec([1, 2, 3, 4, 5])} style={{ fontSize: 12, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>L-V</button>
+              <button onClick={() => setRec([0, 1, 2, 3, 4, 5, 6])} style={{ fontSize: 12, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Todos</button>
+              <button onClick={() => setRec([])} style={{ fontSize: 12, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Ninguno</button>
+            </div>
+          </div>
+        </>)}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-          <button onClick={() => onSave(val, col, goal * 60)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+          <button onClick={() => onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
     </Modal>
@@ -473,14 +500,17 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
   const [catId, setCatId] = useState(categories.length > 0 ? categories[0].id : "");
   const [text, setText] = useState("");
   const lines = text.split("\n").filter((l) => l.trim());
+  const isDateLine = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
   let preview = [], cur = null;
   lines.forEach((line) => {
     const t = line.trim();
     if (t.startsWith("- ") || t.startsWith("· ") || t.startsWith("* ")) {
       if (cur) cur.subs.push(t.slice(2).trim());
+    } else if (isDateLine(t) && cur) {
+      cur.date = t;
     } else {
       if (cur) preview.push(cur);
-      cur = { name: t, subs: [] };
+      cur = { name: t, subs: [], date: null };
     }
   });
   if (cur) preview.push(cur);
@@ -501,7 +531,7 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
             ))}
           </div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Pega tus tareas</div>
-          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · Con "- " delante = subtarea</div>
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · "- " = subtarea · AAAA-MM-DD = fecha límite</div>
           <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grabar contenido\n- Preparar editor\n- Grabar con guiones\n\nTest transcripción\n- 5 guiones sin voz\n- 5 guiones con voz"} rows={10} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
           {preview.length > 0 && (
             <div style={{ marginTop: 20 }}>
@@ -509,6 +539,7 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
               {preview.map((p, i) => (
                 <div key={i} style={{ padding: "10px 14px", marginBottom: 6, borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{p.name}</div>
+                  {p.date && <div style={{ fontSize: 12, color: "#f59e0b", marginTop: 2 }}>⏰ {p.date}</div>}
                   {p.subs.length > 0 && (
                     <div style={{ marginTop: 6 }}>
                       {p.subs.map((s, si) => (
@@ -657,6 +688,140 @@ function OverviewView({ categories, onClose, theme, dk }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
+  const allTasks = categories.flatMap((c) => c.tasks.filter((t) => !t.recurring).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
+  const today = getDateStr();
+  const getStatus = (t) => {
+    if (t.completed) return "done";
+    if (t.isRunning || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today)) return "doing";
+    return "todo";
+  };
+  const cols = [
+    { key: "todo", label: "Por hacer", color: theme.textSec },
+    { key: "doing", label: "En curso", color: "#f59e0b" },
+    { key: "done", label: "Hecho", color: "#10b981" },
+  ];
+  const grouped = { todo: [], doing: [], done: [] };
+  allTasks.forEach((t) => { const s = getStatus(t); grouped[s].push(t); });
+
+  // Sort: overdue first, then by planned date
+  const sortByDate = (tasks) => [...tasks].sort((a, b) => {
+    const da = a.dueDate || a.plannedDate || "9999"; const db = b.dueDate || b.plannedDate || "9999";
+    return da.localeCompare(db);
+  });
+  Object.keys(grouped).forEach((k) => { grouped[k] = sortByDate(grouped[k]); });
+
+  const isOverdue = (t) => t.dueDate && t.dueDate < today && !t.completed;
+  const isDueToday = (t) => t.dueDate === today;
+  const isPlannedToday = (t) => t.plannedDate === today;
+
+  return (
+    <div style={{ padding: "16px 0 100px" }}>
+      {cols.map((col) => (
+        <div key={col.key} style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: col.color }} />
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{col.label}</span>
+            <span style={{ fontSize: 13, color: theme.textSec, backgroundColor: theme.surface, padding: "2px 8px", borderRadius: 10 }}>{grouped[col.key].length}</span>
+          </div>
+          {grouped[col.key].length === 0 && <div style={{ padding: "12px 16px", fontSize: 13, color: theme.textSec, fontStyle: "italic" }}>Sin tareas</div>}
+          {grouped[col.key].map((t) => (
+            <div key={t.id} onClick={() => onTimerView(t.id)} style={{ padding: "10px 14px", marginBottom: 4, borderRadius: 10, backgroundColor: isOverdue(t) ? "#ef444412" : theme.card, border: `1px solid ${isOverdue(t) ? "#ef444433" : theme.border}`, cursor: "pointer", borderLeft: `3px solid ${t.catColor}` }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
+                  <div style={{ fontSize: 12, color: theme.textSec, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <span>{t.catName}</span>
+                    {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
+                    {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  {isOverdue(t) && <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>Vencida</span>}
+                  {isDueToday(t) && !isOverdue(t) && <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600 }}>Hoy</span>}
+                  {t.dueDate && !isDueToday(t) && !isOverdue(t) && <span style={{ fontSize: 11, color: theme.textSec }}>{t.dueDate.slice(5)}</span>}
+                  {isPlannedToday(t) && <span style={{ fontSize: 10, color: "#6366f1" }}>📅</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HabitsView({ categories, onUpdate, theme, dk }) {
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth());
+  const [year, setYear] = useState(today.getFullYear());
+  const recurringTasks = categories.flatMap((c) => c.tasks.filter((t) => t.recurring && t.recurring.length > 0).map((t) => ({ ...ensureTask(t), catColor: c.color, catId: c.id })));
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthName = new Date(year, month).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+  const todayStr = getDateStr();
+
+  const toggleDay = (taskId, dateStr) => {
+    onUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      const hist = { ...(t.recurringHistory || {}) };
+      hist[dateStr] ? delete hist[dateStr] : hist[dateStr] = true;
+      return { ...t, recurringHistory: hist };
+    }) })));
+  };
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); };
+
+  return (
+    <div style={{ padding: "16px 0 100px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 20, padding: "4px 12px" }}>‹</button>
+        <span style={{ fontSize: 16, fontWeight: 600, textTransform: "capitalize" }}>{monthName}</span>
+        <button onClick={nextMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 20, padding: "4px 12px" }}>›</button>
+      </div>
+      {recurringTasks.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay hábitos. Marca una tarea como recurrente para verla aquí.</div>}
+      {recurringTasks.map((t) => {
+        const hist = t.recurringHistory || {};
+        const doneCount = Array.from({ length: daysInMonth }, (_, i) => {
+          const ds = `${year}-${String(month + 1).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+          return hist[ds] ? 1 : 0;
+        }).reduce((a, b) => a + b, 0);
+        return (
+          <div key={t.id} style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: t.catColor }} />
+              <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{t.name}</span>
+              <span style={{ fontSize: 12, color: theme.textSec }}>{doneCount}/{daysInMonth}</span>
+              <span style={{ fontSize: 12, color: t.catColor, fontWeight: 600 }}>{Math.round((doneCount / daysInMonth) * 100)}%</span>
+            </div>
+            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+              {Array.from({ length: daysInMonth }, (_, i) => {
+                const day = i + 1;
+                const ds = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                const dayOfWeek = new Date(year, month, day).getDay();
+                const isActive = (t.recurring || []).includes(dayOfWeek);
+                const done = !!hist[ds];
+                const isToday = ds === todayStr;
+                return (
+                  <div key={day} onClick={() => isActive && toggleDay(t.id, ds)} style={{ width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: isToday ? 700 : 400, cursor: isActive ? "pointer" : "default", backgroundColor: done ? t.catColor : (isActive ? (dk ? "#1c1c1c" : "#f0f0f0") : "transparent"), color: done ? "#fff" : (isActive ? theme.text : theme.textSec + "44"), border: isToday ? `2px solid ${t.catColor}` : "none", opacity: isActive ? 1 : 0.3 }}>
+                    {day}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 6, fontSize: 11, color: theme.textSec }}>
+              {["D", "L", "M", "X", "J", "V", "S"].map((d, i) => (
+                <span key={i} style={{ color: (t.recurring || []).includes(i) ? t.catColor : theme.textSec + "44" }}>{d}</span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1157,6 +1322,7 @@ export default function App() {
   const [showOverview, setShowOverview] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
+  const [mainView, setMainView] = useState("tasks"); // tasks | kanban | habits
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1364,6 +1530,14 @@ export default function App() {
 
   useEffect(() => { const h = (e) => { if (activeId) { e.preventDefault(); e.returnValue = ""; } }; window.addEventListener("beforeunload", h); return () => window.removeEventListener("beforeunload", h); }, [activeId]);
 
+  // Recurring tasks: auto-reset daily - mark today in history if applicable
+  useEffect(() => {
+    const todayStr = getDateStr();
+    const lastReset = localStorage.getItem("task-timer-last-recurring-reset");
+    if (lastReset === todayStr) return;
+    localStorage.setItem("task-timer-last-recurring-reset", todayStr);
+  }, []);
+
   // Theme
   useEffect(() => { saveTheme(dk); document.body.style.background = dk ? "#0a0a0a" : "#fafafa"; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dk ? "#0a0a0a" : "#fafafa"); }, [dk]);
 
@@ -1461,7 +1635,7 @@ export default function App() {
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
-  const editTaskSave = (id, name, _c, goalDaily) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}) } : t) }))); setEditModal(null); };
+  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring } : t) }))); setEditModal(null); };
   const moveTaskToCat = (taskId, toCatId) => { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((t) => t.id === taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }; }); if (!task) return p; return without.map((c) => c.id === toCatId ? { ...c, tasks: [...c.tasks, task] } : c); }); setModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
@@ -1510,13 +1684,16 @@ export default function App() {
     const lines = text.split("\n").filter((l) => l.trim());
     const tasks = [];
     let current = null;
+    const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (trimmed.startsWith("- ") || trimmed.startsWith("· ") || trimmed.startsWith("* ")) {
         if (current) current.subtasks.push({ id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed.slice(2).trim(), done: false });
+      } else if (isDate(trimmed) && current) {
+        current.dueDate = trimmed;
       } else {
         if (current) tasks.push(current);
-        current = { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed, totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" };
+        current = { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed, totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "", dueDate: null, plannedDate: null, recurring: null, recurringHistory: {} };
       }
     });
     if (current) tasks.push(current);
@@ -1846,7 +2023,16 @@ export default function App() {
         )}
 
         {/* Categories */}
-        <div style={{ paddingTop: 4, paddingBottom: 100 }}>
+        {/* View tabs */}
+        <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border}` }}>
+          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }].map((v) => (
+            <button key={v.key} onClick={() => setMainView(v.key)} style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: mainView === v.key ? `2px solid ${theme.accent}` : "2px solid transparent", color: mainView === v.key ? theme.text : theme.textSec, fontSize: 14, fontWeight: mainView === v.key ? 600 : 400, cursor: "pointer" }}>{v.label}</button>
+          ))}
+        </div>
+
+        {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} />}
+        {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} />}
+        {mainView === "tasks" && <div style={{ paddingTop: 4, paddingBottom: 100 }}>
           {categories.map((cat, catIdx) => {
             const sq = searchQ.trim().toLowerCase();
             const aTasks = cat.tasks.filter((t) => !t.completed && (!sq || t.name.toLowerCase().includes(sq)));
@@ -1910,6 +2096,9 @@ export default function App() {
                                 {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
                                 {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
                                 {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
+                                {t.dueDate && <span style={{ color: t.dueDate < getDateStr() ? "#ef4444" : t.dueDate === getDateStr() ? "#f59e0b" : theme.textSec }}>· ⏰{t.dueDate.slice(5)}</span>}
+                                {t.plannedDate && <span style={{ color: t.plannedDate === getDateStr() ? "#6366f1" : theme.textSec }}>· 📅{t.plannedDate.slice(5)}</span>}
+                                {t.recurring && <span style={{ color: "#8b5cf6" }}>· 🔁</span>}
                               </div>
                             </div>
                           </div>
@@ -1946,7 +2135,7 @@ export default function App() {
                         {!selectMode && <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
-                          <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onSave: (n, _c, g) => editTaskSave(t.id, n, _c, g) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
+                          <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onDatesChange: true, dueDate: t.dueDate, plannedDate: t.plannedDate, recurring: t.recurring, onSave: (n, _c, g, dd, pd, rec) => editTaskSave(t.id, n, _c, g, dd, pd, rec) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
                           <button onClick={(e) => { e.stopPropagation(); const others = categories.filter((x) => x.id !== cat.id); if (others.length === 0) return; setModal({ title: "Mover tarea", message: `"${t.name}" a:`, options: others.map((o) => ({ label: o.name, color: o.color, onSelect: () => moveTaskToCat(t.id, o.id) })) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.move}</button>
                           <button onClick={(e) => { e.stopPropagation(); writeNfc(t.id, t.name); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.nfc}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Completar?", message: `"${t.name}" → completadas.`, confirmLabel: "Completar", confirmColor: "#10b981", onConfirm: () => completeTask(t.id) }); }} style={{ background: "none", border: "none", color: "#10b981", cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.check}</button>
@@ -1984,7 +2173,7 @@ export default function App() {
             );
           })}
           {categories.length === 0 && (<div style={{ textAlign: "center", padding: "60px 20px", color: theme.textSec }}><div style={{ fontSize: 42, marginBottom: 12 }}>⏱</div><div style={{ fontSize: 17, fontWeight: 500, marginBottom: 6 }}>Sin categorías</div><div style={{ fontSize: 15 }}>Crea tu primera categoría para empezar</div></div>)}
-        </div>
+        </div>}
       </div>
 
       {/* Select mode floating bar */}
