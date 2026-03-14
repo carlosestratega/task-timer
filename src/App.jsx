@@ -121,7 +121,7 @@ const defaultCategories = [
 
 const ensureTask = (t) => {
   const { currentSeconds, ...rest } = t;
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, ...rest };
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, ...rest };
 };
 
 const getWeekStart = () => {
@@ -693,22 +693,30 @@ function OverviewView({ categories, onClose, theme, dk }) {
 }
 
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
+  const [kFilter, setKFilter] = useState("all"); // all | today | week
   const allTasks = categories.flatMap((c) => c.tasks.filter((t) => !t.recurring).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const today = getDateStr();
+  const weekStart = getWeekStart();
+
+  const filtered = kFilter === "today" ? allTasks.filter((t) => t.plannedDate === today || t.dueDate === today || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today) || t.isRunning) : kFilter === "week" ? allTasks.filter((t) => { const d = t.plannedDate || t.dueDate; return (d && d >= getDateStr(weekStart) && d <= today) || (t.sessions || []).some((s) => isThisWeek(s)) || t.isRunning; }) : allTasks;
+
+  const cols = [
+    { key: "todo", label: "Por hacer", color: theme.textSec, emoji: "📋" },
+    { key: "doing", label: "En ejecución", color: "#f59e0b", emoji: "⚡" },
+    { key: "validating", label: "En validación", color: "#8b5cf6", emoji: "🔍" },
+    { key: "done", label: "Completado", color: "#10b981", emoji: "✅" },
+  ];
+
   const getStatus = (t) => {
+    if (t.kanbanStatus) return t.kanbanStatus;
     if (t.completed) return "done";
-    if (t.isRunning || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today)) return "doing";
+    if (t.isRunning || t.totalSeconds > 0) return "doing";
     return "todo";
   };
-  const cols = [
-    { key: "todo", label: "Por hacer", color: theme.textSec },
-    { key: "doing", label: "En curso", color: "#f59e0b" },
-    { key: "done", label: "Hecho", color: "#10b981" },
-  ];
-  const grouped = { todo: [], doing: [], done: [] };
-  allTasks.forEach((t) => { const s = getStatus(t); grouped[s].push(t); });
 
-  // Sort: overdue first, then by planned date
+  const grouped = { todo: [], doing: [], validating: [], done: [] };
+  filtered.forEach((t) => { const s = getStatus(t); if (grouped[s]) grouped[s].push(t); else grouped.todo.push(t); });
+
   const sortByDate = (tasks) => [...tasks].sort((a, b) => {
     const da = a.dueDate || a.plannedDate || "9999"; const db = b.dueDate || b.plannedDate || "9999";
     return da.localeCompare(db);
@@ -716,36 +724,54 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   Object.keys(grouped).forEach((k) => { grouped[k] = sortByDate(grouped[k]); });
 
   const isOverdue = (t) => t.dueDate && t.dueDate < today && !t.completed;
-  const isDueToday = (t) => t.dueDate === today;
-  const isPlannedToday = (t) => t.plannedDate === today;
+  const setStatus = (taskId, status) => {
+    onUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      if (status === "done") return { ...t, kanbanStatus: status, completed: true, completedAt: new Date().toISOString() };
+      return { ...t, kanbanStatus: status, completed: false, completedAt: null };
+    }) })));
+  };
 
   return (
-    <div style={{ padding: "16px 0 100px" }}>
+    <div style={{ padding: "12px 0 100px" }}>
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[{ key: "all", label: "Todas" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }].map((f) => (
+          <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "6px 14px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 13, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
+        ))}
+        <span style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length} tareas</span>
+      </div>
       {cols.map((col) => (
-        <div key={col.key} style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: col.color }} />
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{col.label}</span>
-            <span style={{ fontSize: 13, color: theme.textSec, backgroundColor: theme.surface, padding: "2px 8px", borderRadius: 10 }}>{grouped[col.key].length}</span>
+        <div key={col.key} style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <span style={{ fontSize: 14 }}>{col.emoji}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.label}</span>
+            <span style={{ fontSize: 12, color: theme.textSec, backgroundColor: theme.surface, padding: "1px 8px", borderRadius: 10 }}>{grouped[col.key].length}</span>
           </div>
-          {grouped[col.key].length === 0 && <div style={{ padding: "12px 16px", fontSize: 13, color: theme.textSec, fontStyle: "italic" }}>Sin tareas</div>}
+          {grouped[col.key].length === 0 && <div style={{ padding: "8px 14px", fontSize: 12, color: theme.textSec, fontStyle: "italic" }}>—</div>}
           {grouped[col.key].map((t) => (
-            <div key={t.id} onClick={() => onTimerView(t.id)} style={{ padding: "10px 14px", marginBottom: 4, borderRadius: 10, backgroundColor: isOverdue(t) ? "#ef444412" : theme.card, border: `1px solid ${isOverdue(t) ? "#ef444433" : theme.border}`, cursor: "pointer", borderLeft: `3px solid ${t.catColor}` }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
-                  <div style={{ fontSize: 12, color: theme.textSec, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <span>{t.catName}</span>
-                    {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
-                    {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
+            <div key={t.id} style={{ padding: "10px 12px", marginBottom: 4, borderRadius: 10, backgroundColor: isOverdue(t) ? "#ef444412" : theme.card, border: `1px solid ${isOverdue(t) ? "#ef444433" : theme.border}`, borderLeft: `3px solid ${t.catColor}` }}>
+              <div onClick={() => onTimerView(t.id)} style={{ cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
+                    <div style={{ fontSize: 11, color: theme.textSec, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <span>{t.catName}</span>
+                      {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
+                      {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    {isOverdue(t) && <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 600 }}>Vencida</span>}
+                    {t.dueDate && <span style={{ fontSize: 10, color: t.dueDate === today ? "#f59e0b" : theme.textSec }}>{t.dueDate.slice(5)}</span>}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                  {isOverdue(t) && <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>Vencida</span>}
-                  {isDueToday(t) && !isOverdue(t) && <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600 }}>Hoy</span>}
-                  {t.dueDate && !isDueToday(t) && !isOverdue(t) && <span style={{ fontSize: 11, color: theme.textSec }}>{t.dueDate.slice(5)}</span>}
-                  {isPlannedToday(t) && <span style={{ fontSize: 10, color: "#6366f1" }}>📅</span>}
-                </div>
+              </div>
+              {/* Status buttons */}
+              <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                {cols.filter((c) => c.key !== col.key).map((c) => (
+                  <button key={c.key} onClick={() => setStatus(t.id, c.key)} style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>{c.emoji} {c.label.split(" ").pop()}</button>
+                ))}
               </div>
             </div>
           ))}
@@ -1541,6 +1567,12 @@ export default function App() {
   // Theme
   useEffect(() => { saveTheme(dk); document.body.style.background = dk ? "#0a0a0a" : "#fafafa"; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dk ? "#0a0a0a" : "#fafafa"); }, [dk]);
 
+  // Block body scroll when overlays are open
+  useEffect(() => {
+    document.body.style.overflow = (timerView || showStats || showBackups || showBulkAdd || showBulkDelete || showOverview) ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [timerView, showStats, showBackups, showBulkAdd, showBulkDelete, showOverview]);
+
   const theme = dk
     ? { bg: "#0a0a0a", card: "#141414", border: "#252525", text: "#f5f5f5", textSec: "#737373", accent: "#ffffff", surface: "#1c1c1c" }
     : { bg: "#fafafa", card: "#ffffff", border: "#e5e5e5", text: "#0a0a0a", textSec: "#737373", accent: "#000000", surface: "#f0f0f0" };
@@ -1967,34 +1999,35 @@ export default function App() {
 
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
         {/* Header */}
-        <div style={{ padding: "20px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+        <div style={{ padding: "16px 0 8px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Tareas</h1>
-              <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5 }}>{I.clock}<span>Hoy: {fmtLong(totalToday)}</span></div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tareas</h1>
+              <div style={{ fontSize: 13, color: theme.textSec, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>{I.clock}<span>Hoy: {fmtLong(totalToday)}</span></div>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} onBackups={loadBackups} syncing={syncing} theme={theme} dk={dk} />
-              <button onClick={() => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id)))} title={expanded.size > 0 ? "Contraer todas" : "Expandir todas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{expanded.size > 0 ? I.collapseAll : I.chev}</button>
-              <button onClick={() => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); })} title={showSubsMain.size > 0 ? "Cerrar subtareas" : "Abrir subtareas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: showSubsMain.size > 0 ? theme.text : theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.subtasks}</button>
-              <button onClick={() => setShowOverview(true)} title="Vista general" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.list}</button>
-              <button onClick={() => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }} title={selectMode ? "Salir selección" : "Seleccionar"} style={{ background: "none", border: `1px solid ${selectMode ? "#ef4444" : theme.border}`, borderRadius: 10, color: selectMode ? "#ef4444" : theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.selectAll}</button>
-              <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
-              <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
+              <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
+              <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
             </div>
           </div>
           {/* Search */}
-          <div style={{ marginTop: 12, position: "relative" }}>
+          <div style={{ marginTop: 10, position: "relative" }}>
             <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: theme.textSec, display: "flex", opacity: 0.5 }}>{I.search}</div>
-            <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Buscar tareas..." style={{ width: "100%", padding: "10px 14px 10px 38px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+            <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Buscar tareas..." style={{ width: "100%", padding: "9px 14px 9px 36px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
             {searchQ && <button onClick={() => setSearchQ("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: theme.textSec, cursor: "pointer", display: "flex", padding: 4 }}>{I.x}</button>}
           </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <button onClick={() => { setShowNewCat(true); setShowNewTask(null); }} style={{ flex: 1, background: theme.accent, border: "none", borderRadius: 10, color: dk ? "#000" : "#fff", cursor: "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, fontWeight: 600 }}>{I.plus}<span>Nueva categoría</span></button>
-            <button onClick={() => setShowBulkAdd(true)} title="Añadir rápido" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.paste}</button>
-            <button onClick={() => setShowBulkDelete(true)} title="Papelera" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.trash}</button>
-            <button onClick={exportData} title="Exportar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.dl}</button>
-            <button onClick={() => fileRef.current?.click()} title="Importar" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.ul}</button>
+          {/* Toolbar */}
+          <div style={{ marginTop: 8, display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+            <button onClick={() => { setShowNewCat(true); setShowNewTask(null); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.plus} Categoría</button>
+            <button onClick={() => setShowBulkAdd(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.paste} Pegar</button>
+            <button onClick={() => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${selectMode ? "#ef4444" : theme.border}`, background: "none", color: selectMode ? "#ef4444" : theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.selectAll} Seleccionar</button>
+            <button onClick={() => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id)))} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{expanded.size > 0 ? I.collapseAll : I.chev} {expanded.size > 0 ? "Cerrar" : "Abrir"}</button>
+            <button onClick={() => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); })} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: showSubsMain.size > 0 ? theme.text : theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.subtasks} Subs</button>
+            <button onClick={() => setShowOverview(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.list} Vista</button>
+            <button onClick={() => setShowBulkDelete(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.trash} Papelera</button>
+            <button onClick={exportData} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.dl} Export</button>
+            <button onClick={() => fileRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{I.ul} Import</button>
             <input ref={fileRef} type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
           </div>
         </div>
