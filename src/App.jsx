@@ -98,6 +98,7 @@ const I = {
   grip: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" /></svg>,
   nfc: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6,8.32a7.43,7.43,0,0,1,0,7.36" /><path d="M9.46,6.21a11.76,11.76,0,0,1,0,11.58" /><path d="M12.91,4.1a16.08,16.08,0,0,1,0,15.8" /><path d="M16.37,2a20.4,20.4,0,0,1,0,20" /></svg>,
   list: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1" fill="currentColor" /><circle cx="4" cy="12" r="1" fill="currentColor" /><circle cx="4" cy="18" r="1" fill="currentColor" /></svg>,
+  selectAll: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>,
 };
 
 const CAT_COLORS = [
@@ -1154,6 +1155,8 @@ export default function App() {
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState(new Set());
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1798,6 +1801,7 @@ export default function App() {
               <button onClick={() => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id)))} title={expanded.size > 0 ? "Contraer todas" : "Expandir todas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{expanded.size > 0 ? I.collapseAll : I.chev}</button>
               <button onClick={() => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); })} title={showSubsMain.size > 0 ? "Cerrar subtareas" : "Abrir subtareas"} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: showSubsMain.size > 0 ? theme.text : theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.subtasks}</button>
               <button onClick={() => setShowOverview(true)} title="Vista general" style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.list}</button>
+              <button onClick={() => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }} title={selectMode ? "Salir selección" : "Seleccionar"} style={{ background: "none", border: `1px solid ${selectMode ? "#ef4444" : theme.border}`, borderRadius: 10, color: selectMode ? "#ef4444" : theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.selectAll}</button>
               <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
               <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
             </div>
@@ -1863,11 +1867,20 @@ export default function App() {
                     {cTasks.length > 0 && <span style={{ fontSize: 12, color: "#10b981" }}>+{cTasks.length} ✓</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    {selectMode ? (() => {
+                      const catIds = aTasks.map((t) => t.id);
+                      const allSel = catIds.length > 0 && catIds.every((id) => selectedTasks.has(id));
+                      return <button onClick={() => setSelectedTasks((p) => { const n = new Set(p); if (allSel) { catIds.forEach((id) => n.delete(id)); } else { catIds.forEach((id) => n.add(id)); } return n; })} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", alignItems: "center", gap: 6, color: allSel ? "#ef4444" : theme.textSec, fontSize: 13 }}>
+                        <div style={{ width: 20, height: 20, borderRadius: 5, border: allSel ? "none" : `2px solid ${theme.border}`, backgroundColor: allSel ? "#ef4444" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{allSel && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</div>
+                        Todas
+                      </button>;
+                    })() : (<>
                     <button onClick={() => setModal({ title: `Ordenar "${cat.name}"`, options: [ { label: "A → Z", onSelect: () => sortTasks(cat.id, "alpha") }, { label: "Z → A", onSelect: () => sortTasks(cat.id, "alpha-desc") }, { label: "Más tiempo", onSelect: () => sortTasks(cat.id, "time") }, { label: "Menos tiempo", onSelect: () => sortTasks(cat.id, "time-asc") }, { label: "Más sesiones", onSelect: () => sortTasks(cat.id, "sessions") }, { label: "Más reciente", onSelect: () => sortTasks(cat.id, "recent") } ] })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.sort}</button>
                     <button onClick={() => moveCat(cat.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === 0 ? 0.15 : 0.5 }}>{I.up}</button>
                     <button onClick={() => moveCat(cat.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === categories.length - 1 ? 0.15 : 0.5 }}>{I.down}</button>
                     <button onClick={() => setEditModal({ title: "Editar categoría", value: cat.name, color: cat.color, onColorChange: true, onSave: (n, c) => editCatSave(cat.id, n, c) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.edit}</button>
                     <button onClick={() => setModal({ title: "¿Eliminar categoría?", message: `"${cat.name}" y todas sus tareas.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delCat(cat.id) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
+                    </>)}
                     <div onClick={() => toggle(cat.id)} style={{ transform: isExpanded ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", color: theme.textSec, display: "flex", cursor: "pointer", padding: 4 }}>{I.chev}</div>
                   </div>
                 </div>
@@ -1882,10 +1895,14 @@ export default function App() {
                     const goalPct = t.goalDaily > 0 ? Math.min(100, (tToday / t.goalDaily) * 100) : -1;
                     return (
                       <SortableTask key={t.id} id={t.id}>{(listeners) => (
-                      <div onClick={() => setTimerView(t.id)} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: isActive ? `${cat.color}12` : theme.card, border: `1px solid ${isActive ? `${cat.color}33` : theme.border}`, cursor: "pointer" }}>
+                      <div onClick={() => { if (selectMode) { setSelectedTasks((p) => { const n = new Set(p); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; }); } else { setTimerView(t.id); } }} style={{ padding: "12px 12px", marginBottom: 5, borderRadius: 12, backgroundColor: selectedTasks.has(t.id) ? "#ef444415" : (isActive ? `${cat.color}12` : theme.card), border: `1px solid ${selectedTasks.has(t.id) ? "#ef444444" : (isActive ? `${cat.color}33` : theme.border)}`, cursor: "pointer" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, marginRight: 8 }}>
-                            <div {...listeners} style={{ color: theme.textSec, opacity: 0.25, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
+                            {selectMode ? (
+                              <div style={{ width: 22, height: 22, borderRadius: 6, border: selectedTasks.has(t.id) ? "none" : `2px solid ${theme.border}`, backgroundColor: selectedTasks.has(t.id) ? "#ef4444" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{selectedTasks.has(t.id) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20,6 9,17 4,12" /></svg>}</div>
+                            ) : (
+                              <div {...listeners} style={{ color: theme.textSec, opacity: 0.25, cursor: "grab", display: "flex", flexShrink: 0, touchAction: "none", padding: "4px 2px" }}>{I.grip}</div>
+                            )}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
                               <div style={{ fontSize: 13, color: theme.textSec, marginTop: 3, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -1926,7 +1943,7 @@ export default function App() {
                             )}
                           </div>
                         )}
-                        <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
+                        {!selectMode && <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
                           <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onSave: (n, _c, g) => editTaskSave(t.id, n, _c, g) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
@@ -1935,7 +1952,7 @@ export default function App() {
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Completar?", message: `"${t.name}" → completadas.`, confirmLabel: "Completar", confirmColor: "#10b981", onConfirm: () => completeTask(t.id) }); }} style={{ background: "none", border: "none", color: "#10b981", cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.check}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Resetear?", message: `Borrar tiempo de "${t.name}".`, confirmLabel: "Resetear", confirmColor: "#f59e0b", onConfirm: () => resetTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.reset}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Eliminar?", message: `"${t.name}" permanentemente.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
-                        </div>
+                        </div>}
                       </div>
                       )}</SortableTask>
                     );
@@ -1969,6 +1986,16 @@ export default function App() {
           {categories.length === 0 && (<div style={{ textAlign: "center", padding: "60px 20px", color: theme.textSec }}><div style={{ fontSize: 42, marginBottom: 12 }}>⏱</div><div style={{ fontSize: 17, fontWeight: 500, marginBottom: 6 }}>Sin categorías</div><div style={{ fontSize: 15 }}>Crea tu primera categoría para empezar</div></div>)}
         </div>
       </div>
+
+      {/* Select mode floating bar */}
+      {selectMode && selectedTasks.size > 0 && (
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: "12px 16px", backgroundColor: theme.card, borderTop: `1px solid ${theme.border}`, zIndex: 50, display: "flex", gap: 10, justifyContent: "center", alignItems: "center", animation: "fadeIn .2s" }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{selectedTasks.size} seleccionada{selectedTasks.size !== 1 ? "s" : ""}</span>
+          <button onClick={() => { setModal({ title: `¿Eliminar ${selectedTasks.size} tarea${selectedTasks.size !== 1 ? "s" : ""}?`, message: "Esta acción es permanente.", confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => { bulkDelete([...selectedTasks]); setSelectMode(false); } }); }} style={{ padding: "10px 20px", borderRadius: 10, border: "none", backgroundColor: "#ef4444", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Eliminar</button>
+          <button onClick={() => { const ids = [...selectedTasks]; ids.forEach((id) => completeTask(id)); setSelectedTasks(new Set()); setSelectMode(false); }} style={{ padding: "10px 20px", borderRadius: 10, border: "none", backgroundColor: "#10b981", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Completar</button>
+          <button onClick={() => { setSelectedTasks(new Set()); setSelectMode(false); }} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.textSec, fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.4 } }
