@@ -732,6 +732,7 @@ function DraggableCard({ id, children }) {
 
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
   const [kFilter, setKFilter] = useState("all");
+  const [kSort, setKSort] = useState("due"); // due | planned | category
   const allTasks = categories.flatMap((c) => c.tasks.filter((t) => !t.permanent).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const today = getDateStr();
   const weekStart = getWeekStart();
@@ -759,8 +760,12 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
 
   const grouped = { todo: [], doing: [], validating: [], done: [] };
   filtered.forEach((t) => { const s = getStatus(t); if (grouped[s]) grouped[s].push(t); else grouped.todo.push(t); });
-  const sortByDate = (tasks) => [...tasks].sort((a, b) => (a.dueDate || a.plannedDate || "9999").localeCompare(b.dueDate || b.plannedDate || "9999"));
-  Object.keys(grouped).forEach((k) => { grouped[k] = sortByDate(grouped[k]); });
+  const sortTasks = (tasks) => [...tasks].sort((a, b) => {
+    if (kSort === "planned") return (a.plannedDate || a.dueDate || "9999").localeCompare(b.plannedDate || b.dueDate || "9999");
+    if (kSort === "category") return a.catName.localeCompare(b.catName) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+    return (a.dueDate || a.plannedDate || "9999").localeCompare(b.dueDate || b.plannedDate || "9999");
+  });
+  Object.keys(grouped).forEach((k) => { grouped[k] = sortTasks(grouped[k]); });
 
   const isOverdue = (t) => t.dueDate && t.dueDate < today && !t.completed;
   const setStatus = (taskId, status) => {
@@ -788,6 +793,12 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
           <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
         <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length}</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: theme.textSec }}>Ordenar:</span>
+        {[{ key: "due", label: "⏰ Límite" }, { key: "planned", label: "📅 Planif." }, { key: "category", label: "Categoría" }].map((s) => (
+          <button key={s.key} onClick={() => setKSort(s.key)} style={{ padding: "4px 10px", borderRadius: 14, border: kSort === s.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kSort === s.key ? theme.surface : "transparent", color: kSort === s.key ? theme.text : theme.textSec, fontSize: 11, fontWeight: kSort === s.key ? 600 : 400, cursor: "pointer" }}>{s.label}</button>
+        ))}
       </div>
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="kanban-cols">
