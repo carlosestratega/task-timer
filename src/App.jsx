@@ -991,6 +991,7 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [calFilter, setCalFilter] = useState("all"); // all | due | planned
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDow = new Date(year, month, 1).getDay(); // 0=Sun
@@ -999,12 +1000,15 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
 
   const allTasks = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
 
-  // Tasks by date (planned or due)
+  // Tasks by date filtered
   const tasksByDate = {};
   allTasks.forEach((t) => {
-    [t.plannedDate, t.dueDate].forEach((d) => {
-      if (d) { if (!tasksByDate[d]) tasksByDate[d] = []; tasksByDate[d].push(t); }
-    });
+    if (calFilter === "due" || calFilter === "all") {
+      if (t.dueDate) { if (!tasksByDate[t.dueDate]) tasksByDate[t.dueDate] = []; tasksByDate[t.dueDate].push({ ...t, dateType: "due" }); }
+    }
+    if (calFilter === "planned" || calFilter === "all") {
+      if (t.plannedDate && t.plannedDate !== t.dueDate) { if (!tasksByDate[t.plannedDate]) tasksByDate[t.plannedDate] = []; tasksByDate[t.plannedDate].push({ ...t, dateType: "planned" }); }
+    }
   });
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); setSelectedDay(null); };
@@ -1023,6 +1027,12 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
         <button onClick={prevMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>‹</button>
         <span style={{ fontSize: 16, fontWeight: 700, textTransform: "capitalize" }}>{monthName}</span>
         <button onClick={nextMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>›</button>
+      </div>
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, justifyContent: "center" }}>
+        {[{ key: "all", label: "Todas" }, { key: "due", label: "⏰ Límite" }, { key: "planned", label: "📅 Hacer" }].map((f) => (
+          <button key={f.key} onClick={() => setCalFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: calFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: calFilter === f.key ? theme.accent : "transparent", color: calFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: calFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
+        ))}
       </div>
       {/* Day headers */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 4 }}>
