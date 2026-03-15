@@ -327,11 +327,11 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
         )}
         {onDatesChange && (<>
           <div>
-            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha planificada</div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>📅 Planificado</div>
             <input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", width: "100%" }} />
           </div>
           <div>
-            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha límite</div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>⚠️ Límite</div>
             <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", width: "100%" }} />
           </div>
           <div>
@@ -570,7 +570,7 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
             ))}
           </div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Pega tus tareas</div>
-          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · "- " = subtarea · "limit dd-mm-aaaa" = fecha límite · "to do dd-mm-aaaa" = fecha planificada</div>
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · "- " = subtarea · "limit dd-mm-aaaa" = ⚠️ límite · "to do dd-mm-aaaa" = 📅 planificado</div>
           <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grabar contenido\nlimit 20-03-2026\nto do 19-03-2026\n- Preparar editor\n- Grabar con guiones\n\nTest transcripción\nlimit 22-03-2026\n- 5 guiones sin voz\n- 5 guiones con voz"} rows={10} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
           {preview.length > 0 && (
             <div style={{ marginTop: 20 }}>
@@ -578,7 +578,7 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
               {preview.map((p, i) => (
                 <div key={i} style={{ padding: "10px 14px", marginBottom: 6, borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{p.name}</div>
-                  {p.dueDate && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>⏰ {p.dueDateDisplay || p.dueDate}</div>}
+                  {p.dueDate && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>⚠️ {p.dueDateDisplay || p.dueDate}</div>}
                   {p.plannedDate && <div style={{ fontSize: 12, color: "#6366f1", marginTop: 2 }}>📅 {p.plannedDateDisplay || p.plannedDate}</div>}
                   {p.subs.length > 0 && (
                     <div style={{ marginTop: 6 }}>
@@ -802,14 +802,14 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   return (
     <div style={{ padding: "12px 0 100px" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        {[{ key: "all", label: "Todas" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "due", label: "⏰ Límite" }, { key: "planned", label: "📅 Planif." }].map((f) => (
+        {[{ key: "all", label: "Todas" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }].map((f) => (
           <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
         <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length}</span>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, alignItems: "center" }}>
         <span style={{ fontSize: 11, color: theme.textSec }}>Ordenar:</span>
-        {[{ key: "due", label: "⏰ Límite" }, { key: "planned", label: "📅 Planif." }, { key: "category", label: "Categoría" }].map((s) => (
+        {[{ key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }, { key: "category", label: "Categoría" }].map((s) => (
           <button key={s.key} onClick={() => setKSort(s.key)} style={{ padding: "4px 10px", borderRadius: 14, border: kSort === s.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kSort === s.key ? theme.surface : "transparent", color: kSort === s.key ? theme.text : theme.textSec, fontSize: 11, fontWeight: kSort === s.key ? 600 : 400, cursor: "pointer" }}>{s.label}</button>
         ))}
       </div>
@@ -839,7 +839,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
-                    {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⏰ {fmtDDMM(t.dueDate)}</span>; })()}
+                    {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⚠️ {fmtDDMM(t.dueDate)}</span>; })()}
                     {t.plannedDate && (() => { const dc = dateColor(t.plannedDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>; })()}
                   </div>
                 </div>
@@ -1031,10 +1031,10 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
   const tasksByDate = {};
   allTasks.forEach((t) => {
     if (calFilter === "due" || calFilter === "all") {
-      if (t.dueDate) { if (!tasksByDate[t.dueDate]) tasksByDate[t.dueDate] = []; tasksByDate[t.dueDate].push({ ...t, dateType: "due" }); }
+      if (t.dueDate) { if (!tasksByDate[t.dueDate]) tasksByDate[t.dueDate] = []; const already = tasksByDate[t.dueDate].some((x) => x.id === t.id && x.dateType === "due"); if (!already) tasksByDate[t.dueDate].push({ ...t, dateType: "due" }); }
     }
     if (calFilter === "planned" || calFilter === "all") {
-      if (t.plannedDate && t.plannedDate !== t.dueDate) { if (!tasksByDate[t.plannedDate]) tasksByDate[t.plannedDate] = []; tasksByDate[t.plannedDate].push({ ...t, dateType: "planned" }); }
+      if (t.plannedDate) { if (!tasksByDate[t.plannedDate]) tasksByDate[t.plannedDate] = []; const already = tasksByDate[t.plannedDate].some((x) => x.id === t.id && x.dateType === "planned"); if (!already) tasksByDate[t.plannedDate].push({ ...t, dateType: "planned" }); }
     }
   });
 
@@ -1057,7 +1057,7 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
       </div>
       {/* Filters */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, justifyContent: "center" }}>
-        {[{ key: "all", label: "Todas" }, { key: "due", label: "⏰ Límite" }, { key: "planned", label: "📅 Hacer" }].map((f) => (
+        {[{ key: "all", label: "Todas" }, { key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }].map((f) => (
           <button key={f.key} onClick={() => setCalFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: calFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: calFilter === f.key ? theme.accent : "transparent", color: calFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: calFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
       </div>
@@ -1100,8 +1100,8 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
                 <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
                 <div style={{ fontSize: 11, color: theme.textSec, display: "flex", gap: 6 }}>
                   <span style={{ color: t.catColor }}>{t.catName}</span>
-                  {t.dueDate === selectedDateStr && <span style={{ color: "#ef4444" }}>⏰ límite</span>}
-                  {t.plannedDate === selectedDateStr && <span style={{ color: "#6366f1" }}>📅 hacer</span>}
+                  {t.dueDate === selectedDateStr && <span style={{ color: "#ef4444" }}>⚠️ Límite</span>}
+                  {t.plannedDate === selectedDateStr && <span style={{ color: "#6366f1" }}>📅 Planificado</span>}
                   {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds)}</span>}
                 </div>
               </div>
@@ -2147,11 +2147,11 @@ export default function App() {
             <div style={{ marginTop: 20, width: "90%", maxWidth: 320 }}>
               {!t.permanent && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
                 <div style={{ flex: 1, minWidth: 130 }}>
-                  <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>📅 Planificada</div>
+                  <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>📅 Planificado</div>
                   <input type="date" value={t.plannedDate || ""} onChange={(e) => update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => tk.id === timerView ? { ...tk, plannedDate: e.target.value || null } : tk) })))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 130 }}>
-                  <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>⏰ Límite</div>
+                  <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>⚠️ Límite</div>
                   <input type="date" value={t.dueDate || ""} onChange={(e) => update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => tk.id === timerView ? { ...tk, dueDate: e.target.value || null } : tk) })))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.dueDate && t.dueDate < getDateStr() ? "#ef4444" : theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
                 </div>
               </div>}
@@ -2457,7 +2457,7 @@ export default function App() {
                                 {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
                                 {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
                                 {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
-                                {t.dueDate && <span style={{ color: dateColor(t.dueDate, t.completed) || theme.textSec }}>· ⏰ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
+                                {t.dueDate && <span style={{ color: dateColor(t.dueDate, t.completed) || theme.textSec }}>· ⚠️ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
                                 {t.plannedDate && <span style={{ color: dateColor(t.plannedDate, t.completed) || theme.textSec }}>· 📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
                                 {t.recurring && <span style={{ color: "#8b5cf6" }}>· 🔁</span>}
                               </div>
