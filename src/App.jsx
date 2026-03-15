@@ -858,7 +858,14 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
+  const [colOrder, setColOrder] = useState(null); // null = default, array of task ids
   const recurringTasks = categories.flatMap((c) => c.tasks.filter((t) => t.recurring && t.recurring.length > 0).map((t) => ({ ...ensureTask(t), catColor: c.color, catId: c.id })));
+
+  // Apply custom order
+  const orderedTasks = colOrder ? colOrder.map((id) => recurringTasks.find((t) => t.id === id)).filter(Boolean) : recurringTasks;
+  // Add any new tasks not in order
+  const missingTasks = recurringTasks.filter((t) => !colOrder || !colOrder.includes(t.id));
+  const finalTasks = colOrder ? [...orderedTasks, ...missingTasks] : recurringTasks;
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthName = new Date(year, month).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
@@ -874,11 +881,22 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
     }) })));
   };
 
+  const moveCol = (taskId, dir) => {
+    const ids = finalTasks.map((t) => t.id);
+    const idx = ids.indexOf(taskId);
+    if (idx < 0) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= ids.length) return;
+    const newIds = [...ids];
+    [newIds[idx], newIds[newIdx]] = [newIds[newIdx], newIds[idx]];
+    setColOrder(newIds);
+  };
+
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); };
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); };
 
   // Stats per task
-  const taskStats = recurringTasks.map((t) => {
+  const taskStats = finalTasks.map((t) => {
     const hist = t.recurringHistory || {};
     let total = 0, done = 0;
     for (let d = 1; d <= daysInMonth; d++) {
@@ -899,15 +917,24 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
         <span style={{ fontSize: 16, fontWeight: 700, textTransform: "capitalize" }}>{monthName}</span>
         <button onClick={nextMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>›</button>
       </div>
+      {colOrder && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button onClick={() => setColOrder(null)} style={{ padding: "4px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer" }}>↺ Orden original</button>
+        </div>
+      )}
       {recurringTasks.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay hábitos. Edita una tarea y activa "Repetir" para verla aquí.</div>}
       {recurringTasks.length > 0 && (
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: recurringTasks.length * 44 + 130 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: finalTasks.length * 44 + 130 }}>
             <thead>
               <tr>
                 <th style={{ position: "sticky", left: 0, backgroundColor: theme.bg, zIndex: 2, padding: "6px 8px", textAlign: "left", fontSize: 12, color: theme.textSec, fontWeight: 500, borderBottom: `1px solid ${theme.border}`, minWidth: 120 }}>Día</th>
-                {taskStats.map((t) => (
-                  <th key={t.id} style={{ padding: "6px 4px", textAlign: "center", borderBottom: `1px solid ${theme.border}`, minWidth: 40 }}>
+                {taskStats.map((t, ti) => (
+                  <th key={t.id} style={{ padding: "4px 2px", textAlign: "center", borderBottom: `1px solid ${theme.border}`, minWidth: 44 }}>
+                    <div style={{ display: "flex", justifyContent: "center", gap: 0, marginBottom: 2 }}>
+                      <button onClick={() => moveCol(t.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, opacity: ti === 0 ? 0.15 : 0.5 }}>◀</button>
+                      <button onClick={() => moveCol(t.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, opacity: ti === taskStats.length - 1 ? 0.15 : 0.5 }}>▶</button>
+                    </div>
                     <div style={{ fontSize: 18 }}>{t.emoji || t.name.charAt(0)}</div>
                     <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 50 }}>{t.name}</div>
                   </th>
