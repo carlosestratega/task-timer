@@ -514,17 +514,29 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
   const [catId, setCatId] = useState(categories.length > 0 ? categories[0].id : "");
   const [text, setText] = useState("");
   const lines = text.split("\n").filter((l) => l.trim());
-  const isDateLine = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const parseDateLine = (s) => {
+    const lm = s.match(/^limit\s+(\d{2})-(\d{2})-(\d{4})$/i);
+    if (lm) return { type: "due", date: `${lm[3]}-${lm[2]}-${lm[1]}`, display: `${lm[1]}-${lm[2]}-${lm[3]}` };
+    const tm = s.match(/^to\s*do\s+(\d{2})-(\d{2})-(\d{4})$/i);
+    if (tm) return { type: "planned", date: `${tm[3]}-${tm[2]}-${tm[1]}`, display: `${tm[1]}-${tm[2]}-${tm[3]}` };
+    const old = s.match(/^\d{4}-\d{2}-\d{2}$/);
+    if (old) return { type: "due", date: s, display: s };
+    return null;
+  };
   let preview = [], cur = null;
   lines.forEach((line) => {
     const t = line.trim();
     if (t.startsWith("- ") || t.startsWith("· ") || t.startsWith("* ")) {
       if (cur) cur.subs.push(t.slice(2).trim());
-    } else if (isDateLine(t) && cur) {
-      cur.date = t;
     } else {
-      if (cur) preview.push(cur);
-      cur = { name: t, subs: [], date: null };
+      const dl = parseDateLine(t);
+      if (dl && cur) {
+        if (dl.type === "due") cur.dueDate = dl.date; else cur.plannedDate = dl.date;
+        if (dl.type === "due") cur.dueDateDisplay = dl.display; else cur.plannedDateDisplay = dl.display;
+      } else {
+        if (cur) preview.push(cur);
+        cur = { name: t, subs: [], dueDate: null, plannedDate: null };
+      }
     }
   });
   if (cur) preview.push(cur);
@@ -545,15 +557,16 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
             ))}
           </div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Pega tus tareas</div>
-          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · "- " = subtarea · AAAA-MM-DD = fecha límite</div>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grabar contenido\n- Preparar editor\n- Grabar con guiones\n\nTest transcripción\n- 5 guiones sin voz\n- 5 guiones con voz"} rows={10} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 10, opacity: 0.7 }}>Línea = tarea · "- " = subtarea · "limit dd-mm-aaaa" = fecha límite · "to do dd-mm-aaaa" = fecha planificada</div>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grabar contenido\nlimit 20-03-2026\nto do 19-03-2026\n- Preparar editor\n- Grabar con guiones\n\nTest transcripción\nlimit 22-03-2026\n- 5 guiones sin voz\n- 5 guiones con voz"} rows={10} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
           {preview.length > 0 && (
             <div style={{ marginTop: 20 }}>
               <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 10 }}>Vista previa: {preview.length} tarea{preview.length > 1 ? "s" : ""}</div>
               {preview.map((p, i) => (
                 <div key={i} style={{ padding: "10px 14px", marginBottom: 6, borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{p.name}</div>
-                  {p.date && <div style={{ fontSize: 12, color: "#f59e0b", marginTop: 2 }}>⏰ {p.date}</div>}
+                  {p.dueDate && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>⏰ {p.dueDateDisplay || p.dueDate}</div>}
+                  {p.plannedDate && <div style={{ fontSize: 12, color: "#6366f1", marginTop: 2 }}>📅 {p.plannedDateDisplay || p.plannedDate}</div>}
                   {p.subs.length > 0 && (
                     <div style={{ marginTop: 6 }}>
                       {p.subs.map((s, si) => (
@@ -1792,16 +1805,27 @@ export default function App() {
     const lines = text.split("\n").filter((l) => l.trim());
     const tasks = [];
     let current = null;
-    const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const parseDateLine = (s) => {
+      const lm = s.match(/^limit\s+(\d{2})-(\d{2})-(\d{4})$/i);
+      if (lm) return { type: "due", date: `${lm[3]}-${lm[2]}-${lm[1]}` };
+      const tm = s.match(/^to\s*do\s+(\d{2})-(\d{2})-(\d{4})$/i);
+      if (tm) return { type: "planned", date: `${tm[3]}-${tm[2]}-${tm[1]}` };
+      const old = s.match(/^\d{4}-\d{2}-\d{2}$/);
+      if (old) return { type: "due", date: s };
+      return null;
+    };
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (trimmed.startsWith("- ") || trimmed.startsWith("· ") || trimmed.startsWith("* ")) {
         if (current) current.subtasks.push({ id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed.slice(2).trim(), done: false });
-      } else if (isDate(trimmed) && current) {
-        current.dueDate = trimmed;
       } else {
-        if (current) tasks.push(current);
-        current = { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed, totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "", dueDate: null, plannedDate: null, recurring: null, recurringHistory: {} };
+        const dl = parseDateLine(trimmed);
+        if (dl && current) {
+          if (dl.type === "due") current.dueDate = dl.date; else current.plannedDate = dl.date;
+        } else {
+          if (current) tasks.push(current);
+          current = { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: trimmed, totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "", dueDate: null, plannedDate: null, recurring: null, recurringHistory: {} };
+        }
       }
     });
     if (current) tasks.push(current);
