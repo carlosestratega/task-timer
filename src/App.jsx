@@ -11,6 +11,7 @@ import {
   signOut,
   browserLocalPersistence,
   setPersistence,
+  GoogleAuthProvider,
 } from "firebase/auth";
 import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc, query, orderBy, limit } from "firebase/firestore";
 
@@ -121,7 +122,7 @@ const defaultCategories = [
 
 const ensureTask = (t) => {
   const { currentSeconds, ...rest } = t;
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, emoji: null, permanent: false, ...rest };
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, emoji: null, permanent: false, calEventId: null, ...rest };
 };
 
 const getWeekStart = () => {
@@ -952,6 +953,118 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
   );
 }
 
+// Google Calendar sync helpers
+const gcalSync = async (token, task, catName) => {
+  if (!token || (!task.plannedDate && !task.dueDate)) return null;
+  const date = task.plannedDate || task.dueDate;
+  const nextDay = (d) => { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + 1); return dt.toISOString().split("T")[0]; };
+  const body = { summary: `${task.emoji ? task.emoji + " " : ""}${task.name}`, description: `Categoría: ${catName}${task.dueDate ? "\nLímite: " + task.dueDate : ""}${task.plannedDate ? "\nPlanificada: " + task.plannedDate : ""}`, start: { date }, end: { date: nextDay(date) } };
+  try {
+    if (task.calEventId) {
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${task.calEventId}`, { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) return task.calEventId;
+    }
+    const r = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (r.ok) { const d = await r.json(); return d.id; }
+  } catch (e) { console.log("gcal sync error", e); }
+  return null;
+};
+const gcalDelete = async (token, eventId) => {
+  if (!token || !eventId) return;
+  try { await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }); } catch (e) {}
+};
+
+function CalendarView({ categories, onTimerView, theme, dk }) {
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth());
+  const [year, setYear] = useState(today.getFullYear());
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDow = new Date(year, month, 1).getDay(); // 0=Sun
+  const monthName = new Date(year, month).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+  const todayStr = getDateStr();
+
+  const allTasks = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
+
+  // Tasks by date (planned or due)
+  const tasksByDate = {};
+  allTasks.forEach((t) => {
+    [t.plannedDate, t.dueDate].forEach((d) => {
+      if (d) { if (!tasksByDate[d]) tasksByDate[d] = []; tasksByDate[d].push(t); }
+    });
+  });
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); setSelectedDay(null); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); setSelectedDay(null); };
+
+  const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
+  // Adjust firstDow to Monday-start (0=Mon)
+  const startOffset = firstDow === 0 ? 6 : firstDow - 1;
+
+  const selectedDateStr = selectedDay ? `${year}-${String(month + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}` : null;
+  const selectedTasks = selectedDateStr ? (tasksByDate[selectedDateStr] || []) : [];
+
+  return (
+    <div style={{ padding: "12px 0 100px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>‹</button>
+        <span style={{ fontSize: 16, fontWeight: 700, textTransform: "capitalize" }}>{monthName}</span>
+        <button onClick={nextMonth} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>›</button>
+      </div>
+      {/* Day headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 4 }}>
+        {DAYS.map((d) => <div key={d} style={{ textAlign: "center", fontSize: 11, color: theme.textSec, fontWeight: 600, padding: "4px 0" }}>{d}</div>)}
+      </div>
+      {/* Calendar grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {Array.from({ length: startOffset }, (_, i) => <div key={`e-${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const ds = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const isToday = ds === todayStr;
+          const isSelected = selectedDay === day;
+          const tasks = tasksByDate[ds] || [];
+          const hasOverdue = tasks.some((t) => t.dueDate === ds && ds < todayStr && !t.completed);
+          return (
+            <div key={day} onClick={() => setSelectedDay(isSelected ? null : day)} style={{ minHeight: 52, padding: 4, borderRadius: 8, cursor: "pointer", backgroundColor: isSelected ? (dk ? "#1a1a2e" : "#e8e8ff") : isToday ? (dk ? "#1c1c1c" : "#f0f0ff") : "transparent", border: isToday ? `2px solid #6366f1` : `1px solid ${theme.border}22` }}>
+              <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? "#6366f1" : theme.text, textAlign: "right", marginBottom: 2 }}>{day}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                {tasks.slice(0, 3).map((t, ti) => (
+                  <div key={ti} style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: hasOverdue && t.dueDate === ds ? "#ef4444" : t.catColor }} />
+                ))}
+                {tasks.length > 3 && <div style={{ fontSize: 8, color: theme.textSec }}>+{tasks.length - 3}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Selected day detail */}
+      {selectedDay && (
+        <div style={{ marginTop: 16, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>{selectedDay} de {new Date(year, month).toLocaleDateString("es-ES", { month: "long" })}</div>
+          {selectedTasks.length === 0 && <div style={{ fontSize: 13, color: theme.textSec, fontStyle: "italic" }}>Sin tareas este día</div>}
+          {selectedTasks.map((t) => (
+            <div key={t.id} onClick={() => onTimerView(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", marginBottom: 3, borderRadius: 8, backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderLeft: `3px solid ${t.catColor}`, cursor: "pointer" }}>
+              {t.emoji && <span style={{ fontSize: 14 }}>{t.emoji}</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
+                <div style={{ fontSize: 11, color: theme.textSec, display: "flex", gap: 6 }}>
+                  <span style={{ color: t.catColor }}>{t.catName}</span>
+                  {t.dueDate === selectedDateStr && <span style={{ color: "#ef4444" }}>⏰ límite</span>}
+                  {t.plannedDate === selectedDateStr && <span style={{ color: "#6366f1" }}>📅 hacer</span>}
+                  {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds)}</span>}
+                </div>
+              </div>
+              {t.completed && <span style={{ color: "#10b981", fontSize: 14 }}>✓</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatsView({ categories, theme, dk, onClose }) {
   const [period, setPeriod] = useState("today");
   const [filter, setFilter] = useState("all");
@@ -1448,7 +1561,7 @@ export default function App() {
   const [showOverview, setShowOverview] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
-  const [mainView, setMainView] = useState("tasks"); // tasks | kanban | habits
+  const [mainView, setMainView] = useState("tasks"); // tasks | kanban | habits | calendar
   const intRef = useRef(null);
   const saveRef = useRef(null);
   const initDone = useRef(false);
@@ -1469,8 +1582,14 @@ export default function App() {
       return unsub;
     }).catch(() => setAuthLoading(false));
   }, []);
+  const [calToken, setCalToken] = useState(() => { try { return localStorage.getItem("task-timer-cal-token"); } catch (e) { return null; } });
   const handleLogin = async () => {
-    try { await setPersistence(auth, browserLocalPersistence); await signInWithPopup(auth, googleProvider); }
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) { setCalToken(credential.accessToken); localStorage.setItem("task-timer-cal-token", credential.accessToken); }
+    }
     catch (err) { if (err.code?.includes("popup")) { try { await signInWithRedirect(auth, googleProvider); } catch (e) {} } }
   };
   const handleLogout = async () => { if (activeId) doStop(activeId); await signOut(auth); initDone.current = false; };
@@ -1767,7 +1886,24 @@ export default function App() {
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
-  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji, permanent) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring, emoji: emoji !== undefined ? emoji : t.emoji, permanent: permanent !== undefined ? permanent : t.permanent } : t) }))); setEditModal(null); };
+  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji, permanent) => {
+    if (!name.trim()) return;
+    const catName = categories.find((c) => c.tasks.some((t) => t.id === id))?.name || "";
+    const oldTask = categories.flatMap((c) => c.tasks).find((t) => t.id === id);
+    update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring, emoji: emoji !== undefined ? emoji : t.emoji, permanent: permanent !== undefined ? permanent : t.permanent } : t) })));
+    // Gcal sync
+    const token = calToken || localStorage.getItem("task-timer-cal-token");
+    if (token && (dueDate || plannedDate)) {
+      const task = { ...oldTask, name: name.trim(), dueDate, plannedDate, emoji };
+      gcalSync(token, task, catName).then((evId) => {
+        if (evId && evId !== oldTask?.calEventId) update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, calEventId: evId } : t) })));
+      });
+    } else if (token && !dueDate && !plannedDate && oldTask?.calEventId) {
+      gcalDelete(token, oldTask.calEventId);
+      update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, calEventId: null } : t) })));
+    }
+    setEditModal(null);
+  };
   const moveTaskToCat = (taskId, toCatId) => { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((t) => t.id === taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }; }); if (!task) return p; return without.map((c) => c.id === toCatId ? { ...c, tasks: [...c.tasks, task] } : c); }); setModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
@@ -2197,13 +2333,14 @@ export default function App() {
         {/* Categories */}
         {/* View tabs */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border}` }}>
-          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }].map((v) => (
+          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }, { key: "calendar", label: "📅" }].map((v) => (
             <button key={v.key} onClick={() => setMainView(v.key)} style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: mainView === v.key ? `2px solid ${theme.accent}` : "2px solid transparent", color: mainView === v.key ? theme.text : theme.textSec, fontSize: 14, fontWeight: mainView === v.key ? 600 : 400, cursor: "pointer" }}>{v.label}</button>
           ))}
         </div>
 
         {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} />}
         {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} />}
+        {mainView === "calendar" && <CalendarView categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
         {mainView === "tasks" && <div style={{ paddingTop: 4, paddingBottom: 100 }}>
           {categories.map((cat, catIdx) => {
             const sq = searchQ.trim().toLowerCase();
