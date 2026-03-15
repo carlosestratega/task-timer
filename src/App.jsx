@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDraggable, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { auth, googleProvider, db } from "./firebase";
@@ -121,7 +121,7 @@ const defaultCategories = [
 
 const ensureTask = (t) => {
   const { currentSeconds, ...rest } = t;
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, emoji: null, ...rest };
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, emoji: null, permanent: false, ...rest };
 };
 
 const getWeekStart = () => {
@@ -283,7 +283,7 @@ function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel
   );
 }
 
-function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange, dueDate: initDue, plannedDate: initPlanned, recurring: initRecurring, emoji: initEmoji, onDatesChange }) {
+function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange, dueDate: initDue, plannedDate: initPlanned, recurring: initRecurring, emoji: initEmoji, permanent: initPermanent, onDatesChange }) {
   const [val, setVal] = useState(value || "");
   const [col, setCol] = useState(color || "");
   const [goal, setGoal] = useState(goalDaily ? Math.round(goalDaily / 60) : 0);
@@ -291,12 +291,13 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
   const [planned, setPlanned] = useState(initPlanned || "");
   const [rec, setRec] = useState(initRecurring || []);
   const [emo, setEmo] = useState(initEmoji || "");
+  const [perm, setPerm] = useState(!!initPermanent);
   const DAYS = ["D", "L", "M", "X", "J", "V", "S"];
   const toggleRec = (d) => setRec((p) => p.includes(d) ? p.filter((x) => x !== d) : [...p, d].sort());
   return (
     <Modal title={title} onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null); }} placeholder="Nombre..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
+        <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null, perm); }} placeholder="Nombre..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
         {onColorChange && (
           <div>
             <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 8 }}>Color</div>
@@ -340,9 +341,15 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
             </div>
           )}
         </>)}
+        {onDatesChange && (
+          <div onClick={() => setPerm(!perm)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer" }}>
+            <div style={{ width: 40, height: 22, borderRadius: 11, backgroundColor: perm ? "#8b5cf6" : theme.surface, position: "relative", transition: "background .2s" }}><div style={{ width: 18, height: 18, borderRadius: "50%", backgroundColor: "#fff", position: "absolute", top: 2, left: perm ? 20 : 2, transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} /></div>
+            <div><div style={{ fontSize: 13, color: theme.text }}>Permanente</div><div style={{ fontSize: 11, color: theme.textSec }}>No aparece en Kanban (ej: comer, aseo)</div></div>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-          <button onClick={() => onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+          <button onClick={() => onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null, perm)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
     </Modal>
@@ -699,19 +706,35 @@ function OverviewView({ categories, onClose, theme, dk }) {
   );
 }
 
+function DroppableArea({ id, children }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return <div ref={setNodeRef} style={{ borderRadius: 8, outline: isOver ? "2px dashed #6366f1" : "none" }}>{children}</div>;
+}
+
+function DraggableCard({ id, children }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+  const style = { transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : "auto", position: "relative" };
+  return <div ref={setNodeRef} {...listeners} {...attributes} style={style}>{children}</div>;
+}
+
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
-  const [kFilter, setKFilter] = useState("all"); // all | today | week
-  const allTasks = categories.flatMap((c) => c.tasks.filter((t) => !t.recurring).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
+  const [kFilter, setKFilter] = useState("all");
+  const allTasks = categories.flatMap((c) => c.tasks.filter((t) => !t.permanent).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const today = getDateStr();
   const weekStart = getWeekStart();
+  const fmtDDMM = (d) => { if (!d) return ""; const p = d.split("-"); return `${p[2]}-${p[1]}`; };
 
-  const filtered = kFilter === "today" ? allTasks.filter((t) => t.plannedDate === today || t.dueDate === today || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today) || t.isRunning) : kFilter === "week" ? allTasks.filter((t) => { const d = t.plannedDate || t.dueDate; return (d && d >= getDateStr(weekStart) && d <= today) || (t.sessions || []).some((s) => isThisWeek(s)) || t.isRunning; }) : allTasks;
+  const filtered = kFilter === "today" ? allTasks.filter((t) => t.plannedDate === today || t.dueDate === today || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today) || t.isRunning)
+    : kFilter === "week" ? allTasks.filter((t) => { const d = t.plannedDate || t.dueDate; return (d && d >= getDateStr(weekStart)) || (t.sessions || []).some((s) => isThisWeek(s)) || t.isRunning; })
+    : kFilter === "due" ? allTasks.filter((t) => t.dueDate)
+    : kFilter === "planned" ? allTasks.filter((t) => t.plannedDate)
+    : allTasks;
 
   const cols = [
     { key: "todo", label: "Por hacer", color: theme.textSec, emoji: "📋" },
-    { key: "doing", label: "En ejecución", color: "#f59e0b", emoji: "⚡" },
-    { key: "validating", label: "En validación", color: "#8b5cf6", emoji: "🔍" },
-    { key: "done", label: "Completado", color: "#10b981", emoji: "✅" },
+    { key: "doing", label: "Ejecución", color: "#f59e0b", emoji: "⚡" },
+    { key: "validating", label: "Validación", color: "#8b5cf6", emoji: "🔍" },
+    { key: "done", label: "Hecho", color: "#10b981", emoji: "✅" },
   ];
 
   const getStatus = (t) => {
@@ -723,11 +746,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
 
   const grouped = { todo: [], doing: [], validating: [], done: [] };
   filtered.forEach((t) => { const s = getStatus(t); if (grouped[s]) grouped[s].push(t); else grouped.todo.push(t); });
-
-  const sortByDate = (tasks) => [...tasks].sort((a, b) => {
-    const da = a.dueDate || a.plannedDate || "9999"; const db = b.dueDate || b.plannedDate || "9999";
-    return da.localeCompare(db);
-  });
+  const sortByDate = (tasks) => [...tasks].sort((a, b) => (a.dueDate || a.plannedDate || "9999").localeCompare(b.dueDate || b.plannedDate || "9999"));
   Object.keys(grouped).forEach((k) => { grouped[k] = sortByDate(grouped[k]); });
 
   const isOverdue = (t) => t.dueDate && t.dueDate < today && !t.completed;
@@ -739,53 +758,61 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
     }) })));
   };
 
+  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 5 } }), useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }));
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const targetCol = cols.find((c) => c.key === over.id);
+    if (targetCol) { setStatus(active.id, targetCol.key); return; }
+    for (const col of cols) { if (grouped[col.key].find((t) => t.id === over.id)) { setStatus(active.id, col.key); return; } }
+  };
+
   return (
     <div style={{ padding: "12px 0 100px" }}>
-      {/* Filters */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[{ key: "all", label: "Todas" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }].map((f) => (
-          <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "6px 14px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 13, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {[{ key: "all", label: "Todas" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "due", label: "⏰ Límite" }, { key: "planned", label: "📅 Planif." }].map((f) => (
+          <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
-        <span style={{ fontSize: 12, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length} tareas</span>
+        <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length}</span>
       </div>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="kanban-cols">
       {cols.map((col) => (
-        <div key={col.key} className="kanban-col" style={{ marginBottom: 20, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <span style={{ fontSize: 14 }}>{col.emoji}</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.label}</span>
-            <span style={{ fontSize: 12, color: theme.textSec, backgroundColor: theme.surface, padding: "1px 8px", borderRadius: 10 }}>{grouped[col.key].length}</span>
-          </div>
-          {grouped[col.key].length === 0 && <div style={{ padding: "8px 14px", fontSize: 12, color: theme.textSec, fontStyle: "italic" }}>—</div>}
+        <div key={col.key} className="kanban-col" style={{ marginBottom: 16, minWidth: 0 }}>
+          <DroppableArea id={col.key}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", marginBottom: 6, borderRadius: 8, backgroundColor: dk ? "#111" : "#f8f8f8" }}>
+              <span style={{ fontSize: 13 }}>{col.emoji}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: col.color }}>{col.label}</span>
+              <span style={{ fontSize: 11, color: theme.textSec, backgroundColor: theme.surface, padding: "0 6px", borderRadius: 8 }}>{grouped[col.key].length}</span>
+            </div>
+          </DroppableArea>
+          {grouped[col.key].length === 0 && <DroppableArea id={col.key}><div style={{ padding: "20px 8px", fontSize: 11, color: theme.textSec, textAlign: "center", border: `1px dashed ${theme.border}`, borderRadius: 8 }}>Arrastra aquí</div></DroppableArea>}
           {grouped[col.key].map((t) => (
-            <div key={t.id} style={{ padding: "10px 12px", marginBottom: 4, borderRadius: 10, backgroundColor: isOverdue(t) ? "#ef444412" : theme.card, border: `1px solid ${isOverdue(t) ? "#ef444433" : theme.border}`, borderLeft: `3px solid ${t.catColor}` }}>
-              <div onClick={() => onTimerView(t.id)} style={{ cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <DraggableCard key={t.id} id={t.id}>
+              <div onClick={() => onTimerView(t.id)} style={{ padding: "8px 10px", marginBottom: 4, borderRadius: 8, backgroundColor: isOverdue(t) ? "#ef444412" : theme.card, border: `1px solid ${isOverdue(t) ? "#ef444433" : theme.border}`, borderLeft: `3px solid ${t.catColor}`, cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                  {t.emoji && <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{t.emoji}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
-                    <div style={{ fontSize: 11, color: theme.textSec, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span>{t.catName}</span>
+                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
+                    <div style={{ fontSize: 10, color: theme.textSec, marginTop: 2, display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ color: t.catColor }}>{t.catName}</span>
                       {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
                       {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    {isOverdue(t) && <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 600 }}>Vencida</span>}
-                    {t.dueDate && <span style={{ fontSize: 10, color: t.dueDate === today ? "#f59e0b" : theme.textSec }}>{t.dueDate.slice(5)}</span>}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
+                    {t.dueDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: isOverdue(t) ? "#ef444422" : t.dueDate === today ? "#f59e0b22" : theme.surface, color: isOverdue(t) ? "#ef4444" : t.dueDate === today ? "#f59e0b" : theme.textSec }}>⏰{fmtDDMM(t.dueDate)}</span>}
+                    {t.plannedDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: t.plannedDate === today ? "#6366f122" : theme.surface, color: t.plannedDate === today ? "#6366f1" : theme.textSec }}>📅{fmtDDMM(t.plannedDate)}</span>}
                   </div>
                 </div>
               </div>
-              {/* Status buttons */}
-              <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-                {cols.filter((c) => c.key !== col.key).map((c) => (
-                  <button key={c.key} onClick={() => setStatus(t.id, c.key)} style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>{c.emoji} {c.label.split(" ").pop()}</button>
-                ))}
-              </div>
-            </div>
+            </DraggableCard>
           ))}
         </div>
       ))}
       </div>
+      </DndContext>
     </div>
   );
 }
@@ -1716,7 +1743,7 @@ export default function App() {
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
-  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring, emoji: emoji !== undefined ? emoji : t.emoji } : t) }))); setEditModal(null); };
+  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji, permanent) => { if (!name.trim()) return; update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring, emoji: emoji !== undefined ? emoji : t.emoji, permanent: permanent !== undefined ? permanent : t.permanent } : t) }))); setEditModal(null); };
   const moveTaskToCat = (taskId, toCatId) => { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((t) => t.id === taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }; }); if (!task) return p; return without.map((c) => c.id === toCatId ? { ...c, tasks: [...c.tasks, task] } : c); }); setModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
@@ -2245,7 +2272,7 @@ export default function App() {
                         {!selectMode && <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
-                          <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onDatesChange: true, dueDate: t.dueDate, plannedDate: t.plannedDate, recurring: t.recurring, emoji: t.emoji, onSave: (n, _c, g, dd, pd, rec, emo) => editTaskSave(t.id, n, _c, g, dd, pd, rec, emo) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
+                          <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onDatesChange: true, dueDate: t.dueDate, plannedDate: t.plannedDate, recurring: t.recurring, emoji: t.emoji, permanent: t.permanent, onSave: (n, _c, g, dd, pd, rec, emo, perm) => editTaskSave(t.id, n, _c, g, dd, pd, rec, emo, perm) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
                           <button onClick={(e) => { e.stopPropagation(); const others = categories.filter((x) => x.id !== cat.id); if (others.length === 0) return; setModal({ title: "Mover tarea", message: `"${t.name}" a:`, options: others.map((o) => ({ label: o.name, color: o.color, onSelect: () => moveTaskToCat(t.id, o.id) })) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.move}</button>
                           <button onClick={(e) => { e.stopPropagation(); writeNfc(t.id, t.name); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.nfc}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Completar?", message: `"${t.name}" → completadas.`, confirmLabel: "Completar", confirmColor: "#10b981", onConfirm: () => completeTask(t.id) }); }} style={{ background: "none", border: "none", color: "#10b981", cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.check}</button>
