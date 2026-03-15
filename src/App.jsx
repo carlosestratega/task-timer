@@ -815,8 +815,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
-                    {t.dueDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: isOverdue(t) ? "#ef444422" : t.dueDate === today ? "#f59e0b22" : theme.surface, color: isOverdue(t) ? "#ef4444" : t.dueDate === today ? "#f59e0b" : theme.textSec }}>⏰{fmtDDMM(t.dueDate)}</span>}
-                    {t.plannedDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: t.plannedDate === today ? "#6366f122" : theme.surface, color: t.plannedDate === today ? "#6366f1" : theme.textSec }}>📅{fmtDDMM(t.plannedDate)}</span>}
+                    {t.dueDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: isOverdue(t) ? "#ef444422" : t.dueDate === today ? "#f59e0b22" : theme.surface, color: isOverdue(t) ? "#ef4444" : t.dueDate === today ? "#f59e0b" : theme.textSec }}>⏰ {fmtDDMM(t.dueDate)}</span>}
+                    {t.plannedDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: t.plannedDate === today ? "#6366f122" : theme.surface, color: t.plannedDate === today ? "#6366f1" : theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>}
                   </div>
                 </div>
               </div>
@@ -2257,8 +2257,8 @@ export default function App() {
                                 {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
                                 {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
                                 {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
-                                {t.dueDate && <span style={{ color: t.dueDate < getDateStr() ? "#ef4444" : t.dueDate === getDateStr() ? "#f59e0b" : theme.textSec }}>· ⏰{t.dueDate.slice(5)}</span>}
-                                {t.plannedDate && <span style={{ color: t.plannedDate === getDateStr() ? "#6366f1" : theme.textSec }}>· 📅{t.plannedDate.slice(5)}</span>}
+                                {t.dueDate && <span style={{ color: t.dueDate < getDateStr() ? "#ef4444" : t.dueDate === getDateStr() ? "#f59e0b" : theme.textSec }}>· ⏰ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
+                                {t.plannedDate && <span style={{ color: t.plannedDate === getDateStr() ? "#6366f1" : theme.textSec }}>· 📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
                                 {t.recurring && <span style={{ color: "#8b5cf6" }}>· 🔁</span>}
                               </div>
                             </div>
