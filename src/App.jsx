@@ -858,7 +858,8 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
-  const [colOrder, setColOrder] = useState(null); // null = default, array of task ids
+  const [colOrder, setColOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); return s ? JSON.parse(s) : null; } catch (e) { return null; } });
+  const [showFullMonth, setShowFullMonth] = useState(false);
   const recurringTasks = categories.flatMap((c) => c.tasks.filter((t) => t.recurring && t.recurring.length > 0).map((t) => ({ ...ensureTask(t), catColor: c.color, catId: c.id })));
 
   // Apply custom order
@@ -890,10 +891,15 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
     const newIds = [...ids];
     [newIds[idx], newIds[newIdx]] = [newIds[newIdx], newIds[idx]];
     setColOrder(newIds);
+    try { localStorage.setItem("task-timer-habits-order", JSON.stringify(newIds)); } catch (e) {}
   };
 
-  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); };
-  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); };
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); setShowFullMonth(false); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); setShowFullMonth(false); };
+
+  const isCurrentMonth = month === today.getMonth() && year === today.getFullYear();
+  const todayDay = today.getDate();
+  const startDay = (!showFullMonth && isCurrentMonth) ? todayDay : 1;
 
   // Stats per task
   const taskStats = finalTasks.map((t) => {
@@ -919,11 +925,11 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
       </div>
       {colOrder && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-          <button onClick={() => setColOrder(null)} style={{ padding: "4px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer" }}>↺ Orden original</button>
+          <button onClick={() => { setColOrder(null); localStorage.removeItem("task-timer-habits-order"); }} style={{ padding: "4px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer" }}>↺ Orden original</button>
         </div>
       )}
       {recurringTasks.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay hábitos. Edita una tarea y activa "Repetir" para verla aquí.</div>}
-      {recurringTasks.length > 0 && (
+      {recurringTasks.length > 0 && (<>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: finalTasks.length * 44 + 130 }}>
             <thead>
@@ -942,8 +948,8 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: daysInMonth }, (_, i) => {
-                const day = i + 1;
+              {Array.from({ length: daysInMonth - startDay + 1 }, (_, i) => {
+                const day = startDay + i;
                 const ds = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                 const dow = new Date(year, month, day).getDay();
                 const dayName = DAYNAMES[dow];
@@ -987,7 +993,13 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
             </tfoot>
           </table>
         </div>
-      )}
+        {isCurrentMonth && !showFullMonth && startDay > 1 && (
+          <button onClick={() => setShowFullMonth(true)} style={{ display: "block", width: "100%", padding: "10px", marginTop: 8, borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", textAlign: "center" }}>▲ Ver mes completo (1 - {todayDay - 1})</button>
+        )}
+        {showFullMonth && isCurrentMonth && (
+          <button onClick={() => setShowFullMonth(false)} style={{ display: "block", width: "100%", padding: "10px", marginTop: 8, borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", textAlign: "center" }}>▼ Desde hoy</button>
+        )}
+      </>)}
     </div>
   );
 }
