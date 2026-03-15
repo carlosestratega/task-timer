@@ -127,12 +127,24 @@ const ensureTask = (t) => {
 
 const getWeekStart = () => {
   const now = new Date();
-  const day = now.getDay(); // 0=Sun, 1=Mon...
-  const diff = day === 0 ? 6 : day - 1; // days since Monday
+  const day = now.getDay();
+  const diff = day === 0 ? 6 : day - 1;
   const monday = new Date(now);
   monday.setDate(now.getDate() - diff);
   monday.setHours(0, 0, 0, 0);
   return monday;
+};
+const dateColor = (d, completed) => {
+  if (!d) return null;
+  if (completed) return "#10b981";
+  const today = getDateStr();
+  if (d < today) return "#ef4444"; // overdue
+  if (d === today) return "#f59e0b"; // today
+  const ws = getWeekStart();
+  const we = new Date(ws); we.setDate(we.getDate() + 6);
+  const weStr = getDateStr(we);
+  if (d >= getDateStr(ws) && d <= weStr) return "#3b82f6"; // this week
+  return null; // default
 };
 
 // ─── Device ID (unique per browser tab) ────────────────
@@ -827,8 +839,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
-                    {t.dueDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: isOverdue(t) ? "#ef444422" : t.dueDate === today ? "#f59e0b22" : theme.surface, color: isOverdue(t) ? "#ef4444" : t.dueDate === today ? "#f59e0b" : theme.textSec }}>⏰ {fmtDDMM(t.dueDate)}</span>}
-                    {t.plannedDate && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: t.plannedDate === today ? "#6366f122" : theme.surface, color: t.plannedDate === today ? "#6366f1" : theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>}
+                    {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⏰ {fmtDDMM(t.dueDate)}</span>; })()}
+                    {t.plannedDate && (() => { const dc = dateColor(t.plannedDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>; })()}
                   </div>
                 </div>
               </div>
@@ -2096,7 +2108,7 @@ export default function App() {
 
             {/* Dates & Status */}
             <div style={{ marginTop: 20, width: "90%", maxWidth: 320 }}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
+              {!t.permanent && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
                 <div style={{ flex: 1, minWidth: 130 }}>
                   <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>📅 Planificada</div>
                   <input type="date" value={t.plannedDate || ""} onChange={(e) => update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => tk.id === timerView ? { ...tk, plannedDate: e.target.value || null } : tk) })))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
@@ -2105,7 +2117,8 @@ export default function App() {
                   <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 3 }}>⏰ Límite</div>
                   <input type="date" value={t.dueDate || ""} onChange={(e) => update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => tk.id === timerView ? { ...tk, dueDate: e.target.value || null } : tk) })))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.dueDate && t.dueDate < getDateStr() ? "#ef4444" : theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
                 </div>
-              </div>
+              </div>}
+              {!t.permanent && (<>
               <div style={{ fontSize: 11, color: theme.textSec, marginBottom: 4 }}>Estado</div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                 {[{ key: "todo", label: "📋 Por hacer" }, { key: "doing", label: "⚡ Ejecución" }, { key: "validating", label: "🔍 Validación" }, { key: "done", label: "✅ Hecho" }].map((s) => {
@@ -2113,6 +2126,8 @@ export default function App() {
                   return <button key={s.key} onClick={() => { update((p) => p.map((cat2) => ({ ...cat2, tasks: cat2.tasks.map((tk) => { if (tk.id !== timerView) return tk; if (s.key === "done") return { ...tk, kanbanStatus: s.key, completed: true, completedAt: new Date().toISOString() }; return { ...tk, kanbanStatus: s.key, completed: false, completedAt: null }; }) }))); if (s.key === "done") setTimerView(null); }} style={{ padding: "5px 10px", borderRadius: 8, border: current === s.key ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: current === s.key ? `${c.color}15` : "transparent", color: current === s.key ? c.color : theme.textSec, fontSize: 12, cursor: "pointer", fontWeight: current === s.key ? 600 : 400 }}>{s.label}</button>;
                 })}
               </div>
+              </>)}
+              {t.permanent && <div style={{ fontSize: 12, color: "#8b5cf6", textAlign: "center", padding: "6px 0" }}>♾️ Tarea permanente</div>}
             </div>
 
             {/* Tags */}
@@ -2294,13 +2309,13 @@ export default function App() {
               { onClick: () => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id))), icon: expanded.size > 0 ? I.collapseAll : I.chev, label: expanded.size > 0 ? "Cerrar" : "Abrir" },
               { onClick: () => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); }), icon: I.subtasks, label: "Subs", active: showSubsMain.size > 0 },
               { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
-              { onClick: () => setShowBulkDelete(true), icon: I.trash },
-              { onClick: exportData, icon: I.dl },
-              { onClick: () => fileRef.current?.click(), icon: I.ul },
+              { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
+              { onClick: exportData, icon: I.dl, label: "Export" },
+              { onClick: () => fileRef.current?.click(), icon: I.ul, label: "Import" },
             ].map((b, i) => (
-              <button key={i} onClick={b.onClick} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 4px", borderRadius: 8, border: `1px solid ${b.active ? "#ef4444" : theme.border}`, background: "none", color: b.active ? "#ef4444" : theme.textSec, fontSize: 10, cursor: "pointer" }}>
+              <button key={i} onClick={b.onClick} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: "8px 2px", borderRadius: 10, border: `1px solid ${b.active ? "#ef4444" : theme.border}`, background: b.active ? "#ef444410" : "none", color: b.active ? "#ef4444" : theme.textSec, fontSize: 9, cursor: "pointer", lineHeight: 1, textAlign: "center" }}>
                 {b.icon}
-                {b.label && <span>{b.label}</span>}
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" }}>{b.label}</span>
               </button>
             ))}
             <input ref={fileRef} type="file" accept=".json" onChange={importData} style={{ display: "none" }} />
@@ -2405,8 +2420,8 @@ export default function App() {
                                 {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
                                 {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
                                 {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
-                                {t.dueDate && <span style={{ color: t.dueDate < getDateStr() ? "#ef4444" : t.dueDate === getDateStr() ? "#f59e0b" : theme.textSec }}>· ⏰ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
-                                {t.plannedDate && <span style={{ color: t.plannedDate === getDateStr() ? "#6366f1" : theme.textSec }}>· 📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
+                                {t.dueDate && <span style={{ color: dateColor(t.dueDate, t.completed) || theme.textSec }}>· ⏰ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
+                                {t.plannedDate && <span style={{ color: dateColor(t.plannedDate, t.completed) || theme.textSec }}>· 📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
                                 {t.recurring && <span style={{ color: "#8b5cf6" }}>· 🔁</span>}
                               </div>
                             </div>
