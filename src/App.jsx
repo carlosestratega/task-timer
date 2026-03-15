@@ -2356,9 +2356,13 @@ export default function App() {
         input { font-size:16px !important }
         button { cursor:pointer }
         button:active { transform:scale(.97) }
-        @media (min-width: 768px) {
+        @media (min-width: 900px) {
           .kanban-cols { display:flex; gap:12px; align-items:flex-start }
           .kanban-col { flex:1; min-width:0 }
+        }
+        @media (min-width: 600px) and (max-width: 899px) {
+          .kanban-cols { display:flex; gap:10px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:8px }
+          .kanban-col { flex:0 0 220px; min-width:220px }
         }
       `}</style>
     </div>
