@@ -755,7 +755,7 @@ function DraggableCard({ id, children }) {
 }
 
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
-  const [kFilter, setKFilter] = useState("all");
+  const [kFilter, setKFilter] = useState("today");
   const [kSort, setKSort] = useState("due"); // due | planned | category
   const allTasks = categories.flatMap((c) => c.tasks.filter((t) => {
     if (t.permanent && !t.recurring) return false; // permanent non-recurring excluded
@@ -770,11 +770,18 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
     return true;
   }).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const today = getDateStr();
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return getDateStr(d); })();
   const weekStart = getWeekStart();
+  const weekEnd = (() => { const d = new Date(getWeekStart()); d.setDate(d.getDate() + 6); return getDateStr(d); })();
   const fmtDDMM = (d) => { if (!d) return ""; const p = d.split("-"); return `${p[2]}-${p[1]}`; };
+  const hasDateIn = (t, start, end) => {
+    const dates = [t.plannedDate, t.dueDate].filter(Boolean);
+    return dates.some((d) => d >= start && d <= end);
+  };
 
-  const filtered = kFilter === "today" ? allTasks.filter((t) => t.plannedDate === today || t.dueDate === today || t.recurring || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today) || t.isRunning)
-    : kFilter === "week" ? allTasks.filter((t) => { const d = t.plannedDate || t.dueDate; return t.recurring || (d && d >= getDateStr(weekStart)) || (t.sessions || []).some((s) => isThisWeek(s)) || t.isRunning; })
+  const filtered = kFilter === "today" ? allTasks.filter((t) => t.recurring || t.plannedDate === today || t.dueDate === today || t.isRunning)
+    : kFilter === "tomorrow" ? allTasks.filter((t) => t.plannedDate === tomorrow || t.dueDate === tomorrow)
+    : kFilter === "week" ? allTasks.filter((t) => t.recurring || hasDateIn(t, getDateStr(weekStart), weekEnd) || t.isRunning)
     : kFilter === "due" ? allTasks.filter((t) => t.dueDate)
     : kFilter === "planned" ? allTasks.filter((t) => t.plannedDate)
     : allTasks;
@@ -824,7 +831,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   return (
     <div style={{ padding: "12px 0 100px" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        {[{ key: "all", label: "Todas" }, { key: "today", label: "Hoy" }, { key: "week", label: "Semana" }, { key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }].map((f) => (
+        {[{ key: "today", label: "Hoy" }, { key: "tomorrow", label: "Mañana" }, { key: "week", label: "Semana" }, { key: "all", label: "Todas" }, { key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }].map((f) => (
           <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
         <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length}</span>
