@@ -581,8 +581,8 @@ function BulkAddModal({ categories, onAdd, onCancel, theme, dk }) {
               {preview.map((p, i) => (
                 <div key={i} style={{ padding: "10px 14px", marginBottom: 6, borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{p.name}</div>
-                  {p.dueDate && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>⚠️ {p.dueDateDisplay || p.dueDate}</div>}
                   {p.plannedDate && <div style={{ fontSize: 12, color: "#6366f1", marginTop: 2 }}>📅 {p.plannedDateDisplay || p.plannedDate}</div>}
+                  {p.dueDate && <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>⚠️ {p.dueDateDisplay || p.dueDate}</div>}
                   {p.subs.length > 0 && (
                     <div style={{ marginTop: 6 }}>
                       {p.subs.map((s, si) => (
@@ -671,7 +671,11 @@ function OverviewView({ categories, onClose, theme, dk }) {
     c.tasks.forEach((t) => {
       const status = t.completed ? " ✓" : "";
       const time = t.totalSeconds > 0 ? ` (${fmtShort(t.totalSeconds)})` : "";
-      lines.push(`${t.name}${time}${status}`);
+      const pd = t.plannedDate ? ` 📅${t.plannedDate.slice(8)}-${t.plannedDate.slice(5,7)}` : "";
+      const dd = t.dueDate ? ` ⚠️${t.dueDate.slice(8)}-${t.dueDate.slice(5,7)}` : "";
+      const perm = t.permanent ? " ♾️" : "";
+      const rec = t.recurring ? " 🔁" : "";
+      lines.push(`${t.name}${time}${pd}${dd}${perm}${rec}${status}`);
       (t.subtasks || []).forEach((st) => {
         lines.push(`  ${st.done ? "✓" : "·"} ${st.name}`);
       });
@@ -701,10 +705,14 @@ function OverviewView({ categories, onClose, theme, dk }) {
               </div>
               {cat.tasks.filter((t) => !t.completed).map((t) => (
                 <div key={t.id} style={{ marginBottom: 8, paddingLeft: 20 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 14, fontWeight: 500 }}>{t.name}</span>
                     {t.totalSeconds > 0 && <span style={{ fontSize: 12, color: cat.color, fontWeight: 600 }}>{fmtShort(t.totalSeconds)}</span>}
                     {t.goalDaily > 0 && <span style={{ fontSize: 11, color: "#6366f1" }}>{I.target}</span>}
+                    {t.plannedDate && <span style={{ fontSize: 11, color: dateColor(t.plannedDate, t.completed) || theme.textSec }}>📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
+                    {t.dueDate && <span style={{ fontSize: 11, color: dateColor(t.dueDate, t.completed) || theme.textSec }}>⚠️ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
+                    {t.permanent && <span style={{ fontSize: 10, color: "#8b5cf6" }}>♾️</span>}
+                    {t.recurring && <span style={{ fontSize: 10, color: "#8b5cf6" }}>🔁</span>}
                   </div>
                   {(t.subtasks || []).length > 0 && (
                     <div style={{ paddingLeft: 12, marginTop: 3 }}>
@@ -749,7 +757,18 @@ function DraggableCard({ id, children }) {
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
   const [kFilter, setKFilter] = useState("all");
   const [kSort, setKSort] = useState("due"); // due | planned | category
-  const allTasks = categories.flatMap((c) => c.tasks.filter((t) => !t.permanent).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
+  const allTasks = categories.flatMap((c) => c.tasks.filter((t) => {
+    if (t.permanent && !t.recurring) return false; // permanent non-recurring excluded
+    if (t.recurring && t.recurring.length > 0) {
+      // Only show on days they're active and not yet done today
+      const dow = new Date().getDay();
+      if (!t.recurring.includes(dow)) return false;
+      const todayDone = (t.recurringHistory || {})[getDateStr()];
+      if (todayDone) return false;
+      return true;
+    }
+    return true;
+  }).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const today = getDateStr();
   const weekStart = getWeekStart();
   const fmtDDMM = (d) => { if (!d) return ""; const p = d.split("-"); return `${p[2]}-${p[1]}`; };
@@ -842,8 +861,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
-                    {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⚠️ {fmtDDMM(t.dueDate)}</span>; })()}
                     {t.plannedDate && (() => { const dc = dateColor(t.plannedDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>; })()}
+                    {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⚠️ {fmtDDMM(t.dueDate)}</span>; })()}
                   </div>
                 </div>
               </div>
@@ -1114,8 +1133,8 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
                 <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
                 <div style={{ fontSize: 11, color: theme.textSec, display: "flex", gap: 6 }}>
                   <span style={{ color: t.catColor }}>{t.catName}</span>
-                  {t.dueDate === selectedDateStr && <span style={{ color: "#ef4444" }}>⚠️ Límite</span>}
                   {t.plannedDate === selectedDateStr && <span style={{ color: "#6366f1" }}>📅 Planificado</span>}
+                  {t.dueDate === selectedDateStr && <span style={{ color: "#ef4444" }}>⚠️ Límite</span>}
                   {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds)}</span>}
                 </div>
               </div>
@@ -2558,8 +2577,8 @@ export default function App() {
                                 {t.sessions.length > 0 && <span>· {t.sessions.length} ses.</span>}
                                 {t.goalDaily > 0 && <span style={{ color: goalPct >= 100 ? "#10b981" : "#6366f1" }}>· {goalPct >= 100 ? "✓" : `${Math.round(goalPct)}%`}</span>}
                                 {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length} sub</span>}
-                                {t.dueDate && <span style={{ color: dateColor(t.dueDate, t.completed) || theme.textSec }}>· ⚠️ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
                                 {t.plannedDate && <span style={{ color: dateColor(t.plannedDate, t.completed) || theme.textSec }}>· 📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
+                                {t.dueDate && <span style={{ color: dateColor(t.dueDate, t.completed) || theme.textSec }}>· ⚠️ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
                                 {t.recurring && <span style={{ color: "#8b5cf6" }}>· 🔁</span>}
                               </div>
                             </div>
