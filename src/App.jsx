@@ -771,6 +771,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   }).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color, catId: c.id })));
   const today = getDateStr();
   const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return getDateStr(d); })();
+  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return getDateStr(d); })();
   const weekStart = getWeekStart();
   const weekEnd = (() => { const d = new Date(getWeekStart()); d.setDate(d.getDate() + 6); return getDateStr(d); })();
   const fmtDDMM = (d) => { if (!d) return ""; const p = d.split("-"); return `${p[2]}-${p[1]}`; };
@@ -780,6 +781,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   };
 
   const filtered = kFilter === "today" ? allTasks.filter((t) => t.recurring || t.plannedDate === today || t.dueDate === today || t.isRunning)
+    : kFilter === "yesterday" ? allTasks.filter((t) => t.plannedDate === yesterday || t.dueDate === yesterday)
     : kFilter === "tomorrow" ? allTasks.filter((t) => t.plannedDate === tomorrow || t.dueDate === tomorrow)
     : kFilter === "week" ? allTasks.filter((t) => t.recurring || hasDateIn(t, getDateStr(weekStart), weekEnd) || t.isRunning)
     : kFilter === "due" ? allTasks.filter((t) => t.dueDate)
@@ -831,7 +833,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   return (
     <div style={{ padding: "12px 0 100px" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        {[{ key: "today", label: "Hoy" }, { key: "tomorrow", label: "Mañana" }, { key: "week", label: "Semana" }, { key: "all", label: "Todas" }, { key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }].map((f) => (
+        {[{ key: "yesterday", label: "Ayer" }, { key: "today", label: "Hoy" }, { key: "tomorrow", label: "Mañana" }, { key: "week", label: "Semana" }, { key: "all", label: "Todas" }].map((f) => (
           <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
         <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length}</span>
