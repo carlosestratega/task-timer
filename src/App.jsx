@@ -1978,7 +1978,37 @@ export default function App() {
   const moveTaskToCat = (taskId, toCatId) => { update((p) => { let task = null; const without = p.map((c) => { const found = c.tasks.find((t) => t.id === taskId); if (found) task = found; return { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }; }); if (!task) return p; return without.map((c) => c.id === toCatId ? { ...c, tasks: [...c.tasks, task] } : c); }); setModal(null); };
   const moveCat = (id, dir) => update((p) => { const i = p.findIndex((c) => c.id === id); if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p; const n = [...p]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return n; });
   const moveTask = (catId, taskId, dir) => update((p) => p.map((c) => { if (c.id !== catId) return c; const i = c.tasks.findIndex((t) => t.id === taskId); if ((dir === -1 && i === 0) || (dir === 1 && i === c.tasks.length - 1)) return c; const n = [...c.tasks]; [n[i], n[i + dir]] = [n[i + dir], n[i]]; return { ...c, tasks: n }; }));
-  const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
+  const smartScore = (t, mode) => {
+    const today = getDateStr();
+    const ws = getDateStr(getWeekStart());
+    const we = new Date(getWeekStart()); we.setDate(we.getDate() + 6); const weStr = getDateStr(we);
+    const nearestDate = (task) => {
+      const dates = [task.plannedDate, task.dueDate].filter(Boolean).sort();
+      return dates[0] || "9999";
+    };
+    const urgency = (d) => { if (!d) return 99; if (d < today) return 0; if (d === today) return 1; if (d >= ws && d <= weStr) return 2; return 3 + d.localeCompare(today); };
+    if (mode === "rutina") {
+      // permanent first (by sessions desc), then planned, then due
+      if (t.permanent) return -100000 + (99999 - (t.sessions || []).length);
+      const pd = t.plannedDate || "9999";
+      const dd = t.dueDate || "9999";
+      return pd.localeCompare("0") * 1000 + dd.localeCompare("0");
+    }
+    if (mode === "prioridad") {
+      // dated first (closest), permanent last
+      if (t.permanent) return 999999;
+      const nd = nearestDate(t);
+      return urgency(nd) * 10000 + nd.localeCompare("0");
+    }
+    if (mode === "urgente") {
+      const nd = nearestDate(t);
+      if (t.permanent) return 500000 + (99999 - (t.sessions || []).length);
+      return urgency(nd) * 10000 + nd.localeCompare("0");
+    }
+    return 0;
+  };
+  const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (catId && c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); if (sortBy === "planned") { const da = a.plannedDate || "9999"; const db = b.plannedDate || "9999"; return da.localeCompare(db) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); } if (sortBy === "due") { const da = a.dueDate || "9999"; const db = b.dueDate || "9999"; return da.localeCompare(db) || (a.plannedDate || "9999").localeCompare(b.plannedDate || "9999"); } if (sortBy === "rutina" || sortBy === "prioridad" || sortBy === "urgente") return smartScore(a, sortBy) - smartScore(b, sortBy); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
+  const sortAllTasks = (sortBy) => { sortTasks(null, sortBy); };
 
   // dnd-kit sensors - only activate from grip handle
   const dndSensors = useSensors(
@@ -2390,6 +2420,7 @@ export default function App() {
               { onClick: () => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }, icon: I.selectAll, label: "Seleccionar", active: selectMode },
               { onClick: () => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id))), icon: expanded.size > 0 ? I.collapseAll : I.chev, label: expanded.size > 0 ? "Cerrar" : "Abrir" },
               { onClick: () => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); }), icon: I.subtasks, label: "Subs", active: showSubsMain.size > 0 },
+              { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
               { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
               { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
               { onClick: exportData, icon: I.dl, label: "Export" },
@@ -2485,7 +2516,7 @@ export default function App() {
                         Todas
                       </button>;
                     })() : (<>
-                    <button onClick={() => setModal({ title: `Ordenar "${cat.name}"`, options: [ { label: "A → Z", onSelect: () => sortTasks(cat.id, "alpha") }, { label: "Z → A", onSelect: () => sortTasks(cat.id, "alpha-desc") }, { label: "Más tiempo", onSelect: () => sortTasks(cat.id, "time") }, { label: "Menos tiempo", onSelect: () => sortTasks(cat.id, "time-asc") }, { label: "Más sesiones", onSelect: () => sortTasks(cat.id, "sessions") }, { label: "Más reciente", onSelect: () => sortTasks(cat.id, "recent") } ] })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.sort}</button>
+                    <button onClick={() => setModal({ title: `Ordenar "${cat.name}"`, options: [ { label: "A → Z", onSelect: () => sortTasks(cat.id, "alpha") }, { label: "Z → A", onSelect: () => sortTasks(cat.id, "alpha-desc") }, { label: "📅 Planificado", onSelect: () => sortTasks(cat.id, "planned") }, { label: "⚠️ Límite", onSelect: () => sortTasks(cat.id, "due") }, { label: "Más tiempo", onSelect: () => sortTasks(cat.id, "time") }, { label: "Menos tiempo", onSelect: () => sortTasks(cat.id, "time-asc") }, { label: "Más sesiones", onSelect: () => sortTasks(cat.id, "sessions") }, { label: "Más reciente", onSelect: () => sortTasks(cat.id, "recent") } ] })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.sort}</button>
                     <button onClick={() => moveCat(cat.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === 0 ? 0.15 : 0.5 }}>{I.up}</button>
                     <button onClick={() => moveCat(cat.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === categories.length - 1 ? 0.15 : 0.5 }}>{I.down}</button>
                     <button onClick={() => setEditModal({ title: "Editar categoría", value: cat.name, color: cat.color, onColorChange: true, onSave: (n, c) => editCatSave(cat.id, n, c) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.edit}</button>
