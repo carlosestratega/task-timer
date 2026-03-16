@@ -175,14 +175,16 @@ function useCloudSync(user) {
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
 
-  const saveToCloud = useCallback(async (cats, tgs) => {
+  const saveToCloud = useCallback(async (cats, tgs, extras) => {
     if (!user) return;
     setSyncing(true);
     try {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
       const now = new Date().toISOString();
       lastSaveTs.current = new Date(now).getTime();
-      await setDoc(doc(db, "users", user.uid), { categories: clean, tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []), updatedAt: now, _device: DEVICE_ID });
+      const payload = { categories: clean, tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []), updatedAt: now, _device: DEVICE_ID };
+      if (extras) { if (extras.focusPanel !== undefined) payload.focusPanel = extras.focusPanel; if (extras.habitsOrder !== undefined) payload.habitsOrder = extras.habitsOrder; }
+      await setDoc(doc(db, "users", user.uid), payload);
     } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
   }, [user]);
@@ -855,11 +857,10 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   );
 }
 
-function HabitsView({ categories, onUpdate, theme, dk }) {
+function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChange }) {
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
-  const [colOrder, setColOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); return s ? JSON.parse(s) : null; } catch (e) { return null; } });
   const [showFullMonth, setShowFullMonth] = useState(false);
   const recurringTasks = categories.flatMap((c) => c.tasks.filter((t) => t.recurring && t.recurring.length > 0).map((t) => ({ ...ensureTask(t), catColor: c.color, catId: c.id })));
 
@@ -891,8 +892,8 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
     if (newIdx < 0 || newIdx >= ids.length) return;
     const newIds = [...ids];
     [newIds[idx], newIds[newIdx]] = [newIds[newIdx], newIds[idx]];
-    setColOrder(newIds);
-    try { localStorage.setItem("task-timer-habits-order", JSON.stringify(newIds)); } catch (e) {}
+    onColOrderChange(newIds);
+    if (onOrderChange) onOrderChange(newIds);
   };
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); setShowFullMonth(false); };
@@ -926,7 +927,7 @@ function HabitsView({ categories, onUpdate, theme, dk }) {
       </div>
       {colOrder && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-          <button onClick={() => { setColOrder(null); localStorage.removeItem("task-timer-habits-order"); }} style={{ padding: "4px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer" }}>↺ Orden original</button>
+          <button onClick={() => onColOrderChange(null)} style={{ padding: "4px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer" }}>↺ Orden original</button>
         </div>
       )}
       {recurringTasks.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay hábitos. Edita una tarea y activa "Repetir" para verla aquí.</div>}
@@ -1597,6 +1598,7 @@ export default function App() {
   const [newTaskName, setNewTaskName] = useState("");
   const [timerView, setTimerView] = useState(null);
   const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
+  const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); return s ? JSON.parse(s) : null; } catch (e) { return null; } });
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showStats, setShowStats] = useState(false);
@@ -1669,7 +1671,9 @@ export default function App() {
       }
       // Always load from cloud (source of truth)
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
-      setCat(cats); saveLocal(cats); 
+      setCat(cats); saveLocal(cats);
+      if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
+      if (data.habitsOrder) { setHabitsOrder(data.habitsOrder); localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); }
       // Recover tags: merge cloud + local + extracted from sessions
       const cloudTags = data.tags && data.tags.length > 0 ? data.tags : [];
       const localTags = tagsRef.current || [];
@@ -1698,6 +1702,8 @@ export default function App() {
       const cats = (data.categories || []).map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats);
       if (data.tags && data.tags.length > 0) { setTags(data.tags); saveTags(data.tags); }
+      if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
+      if (data.habitsOrder !== undefined) { setHabitsOrder(data.habitsOrder && data.habitsOrder.length > 0 ? data.habitsOrder : null); try { if (data.habitsOrder?.length > 0) localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} }
       // Check if remote stopped/started a timer
       let remoteRunning = null;
       for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) { remoteRunning = t; break; } } if (remoteRunning) break; }
@@ -1922,7 +1928,8 @@ export default function App() {
   };
 
   const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
-  const saveFocus = (arr) => { setFocusPanel(arr); try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {} };
+  const saveFocus = (arr) => { setFocusPanel(arr); try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { focusPanel: arr }); };
+  const saveHabitsOrder = (arr) => { setHabitsOrder(arr); try { if (arr) localStorage.setItem("task-timer-habits-order", JSON.stringify(arr)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { habitsOrder: arr || [] }); };
   const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-5); saveFocus(next); };
   const removeFromFocus = (id) => { saveFocus(focusPanel.filter((x) => x !== id)); };
   const switchFocus = (id) => {
@@ -2485,7 +2492,7 @@ export default function App() {
         </div>
 
         {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} />}
-        {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} />}
+        {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} colOrder={habitsOrder} onColOrderChange={saveHabitsOrder} />}
         {mainView === "calendar" && <CalendarView categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
         {mainView === "tasks" && <div style={{ paddingTop: 4, paddingBottom: 100 }}>
           {categories.map((cat, catIdx) => {
