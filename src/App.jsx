@@ -773,8 +773,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   const weekStart = getWeekStart();
   const fmtDDMM = (d) => { if (!d) return ""; const p = d.split("-"); return `${p[2]}-${p[1]}`; };
 
-  const filtered = kFilter === "today" ? allTasks.filter((t) => t.plannedDate === today || t.dueDate === today || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today) || t.isRunning)
-    : kFilter === "week" ? allTasks.filter((t) => { const d = t.plannedDate || t.dueDate; return (d && d >= getDateStr(weekStart)) || (t.sessions || []).some((s) => isThisWeek(s)) || t.isRunning; })
+  const filtered = kFilter === "today" ? allTasks.filter((t) => t.plannedDate === today || t.dueDate === today || t.recurring || (t.sessions || []).some((s) => s.dateISO && getDateStr(new Date(s.dateISO)) === today) || t.isRunning)
+    : kFilter === "week" ? allTasks.filter((t) => { const d = t.plannedDate || t.dueDate; return t.recurring || (d && d >= getDateStr(weekStart)) || (t.sessions || []).some((s) => isThisWeek(s)) || t.isRunning; })
     : kFilter === "due" ? allTasks.filter((t) => t.dueDate)
     : kFilter === "planned" ? allTasks.filter((t) => t.plannedDate)
     : allTasks;
