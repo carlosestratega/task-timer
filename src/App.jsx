@@ -100,6 +100,7 @@ const I = {
   nfc: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6,8.32a7.43,7.43,0,0,1,0,7.36" /><path d="M9.46,6.21a11.76,11.76,0,0,1,0,11.58" /><path d="M12.91,4.1a16.08,16.08,0,0,1,0,15.8" /><path d="M16.37,2a20.4,20.4,0,0,1,0,20" /></svg>,
   list: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1" fill="currentColor" /><circle cx="4" cy="12" r="1" fill="currentColor" /><circle cx="4" cy="18" r="1" fill="currentColor" /></svg>,
   selectAll: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>,
+  pin: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" /></svg>,
 };
 
 const CAT_COLORS = [
@@ -1595,6 +1596,7 @@ export default function App() {
   const [newCatName, setNewCatName] = useState("");
   const [newTaskName, setNewTaskName] = useState("");
   const [timerView, setTimerView] = useState(null);
+  const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showStats, setShowStats] = useState(false);
@@ -1920,6 +1922,14 @@ export default function App() {
   };
 
   const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
+  const saveFocus = (arr) => { setFocusPanel(arr); try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {} };
+  const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-5); saveFocus(next); };
+  const removeFromFocus = (id) => { saveFocus(focusPanel.filter((x) => x !== id)); };
+  const switchFocus = (id) => {
+    if (activeId && activeId !== id) doStop(activeId);
+    setTimerView(id);
+    doStart(id);
+  };
 
   // ─── CRUD (all save to local + cloud) ──────────────
   const update = (fn) => {
@@ -2142,6 +2152,29 @@ export default function App() {
                 {isActive ? I.pause : I.play}
               </button>
               <button onClick={() => writeNfc(timerView, t.name)} style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", padding: "6px 14px", fontSize: 12 }}>{I.nfc} NFC</button>
+              {/* Focus panel */}
+              {focusPanel.length > 0 && (
+                <div style={{ marginTop: 16, display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", maxWidth: 360 }}>
+                  {focusPanel.map((fId) => {
+                    const ft = getTask(fId);
+                    if (!ft?.task) return null;
+                    const isCurrent = fId === timerView;
+                    const isRunning = fId === activeId;
+                    return (
+                      <div key={fId} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, backgroundColor: isCurrent ? `${ft.cat.color}22` : theme.surface, border: `1.5px solid ${isCurrent ? ft.cat.color : theme.border}`, cursor: "pointer", maxWidth: 160 }}>
+                        <div onClick={() => { if (!isCurrent) switchFocus(fId); }} style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0 }}>
+                          <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: ft.cat.color, flexShrink: 0, animation: isRunning ? "pulse 1.5s infinite" : "none" }} />
+                          <span style={{ fontSize: 11, fontWeight: isCurrent ? 600 : 400, color: isCurrent ? ft.cat.color : theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ft.task.emoji ? ft.task.emoji + " " : ""}{ft.task.name}</span>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); removeFromFocus(fId); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, display: "flex", opacity: 0.5 }}>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {!focusPanel.includes(timerView) && (
+                <button onClick={() => addToFocus(timerView)} style={{ marginTop: focusPanel.length > 0 ? 8 : 14, display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", padding: "6px 14px", fontSize: 12 }}>{I.pin} Fijar al foco</button>
+              )}
             </div>
             {/* Scrollable content */}
             <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px 40px", WebkitOverflowScrolling: "touch" }}>
@@ -2382,6 +2415,24 @@ export default function App() {
           </div>
         ); })()}
 
+        {/* Focus panel on main screen */}
+        {focusPanel.length > 1 && (
+          <div style={{ margin: "10px 0 0", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {focusPanel.map((fId) => {
+              const ft = getTask(fId);
+              if (!ft?.task) return null;
+              const isRunning = fId === activeId;
+              return (
+                <div key={fId} onClick={() => { switchFocus(fId); setTimerView(fId); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 16, backgroundColor: isRunning ? `${ft.cat.color}22` : theme.surface, border: `1px solid ${isRunning ? ft.cat.color : theme.border}`, cursor: "pointer" }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: ft.cat.color, flexShrink: 0, animation: isRunning ? "pulse 1.5s infinite" : "none" }} />
+                  <span style={{ fontSize: 11, fontWeight: isRunning ? 600 : 400, color: isRunning ? ft.cat.color : theme.text, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ft.task.emoji ? ft.task.emoji + " " : ""}{ft.task.name}</span>
+                  <button onClick={(e) => { e.stopPropagation(); removeFromFocus(fId); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 9, display: "flex", opacity: 0.4 }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* New category */}
         {showNewCat && (
           <div style={{ margin: "14px 0 0", padding: 16, borderRadius: 14, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
@@ -2511,6 +2562,7 @@ export default function App() {
                           <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onDatesChange: true, dueDate: t.dueDate, plannedDate: t.plannedDate, recurring: t.recurring, emoji: t.emoji, permanent: t.permanent, onSave: (n, _c, g, dd, pd, rec, emo, perm) => editTaskSave(t.id, n, _c, g, dd, pd, rec, emo, perm) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
                           <button onClick={(e) => { e.stopPropagation(); const others = categories.filter((x) => x.id !== cat.id); if (others.length === 0) return; setModal({ title: "Mover tarea", message: `"${t.name}" a:`, options: others.map((o) => ({ label: o.name, color: o.color, onSelect: () => moveTaskToCat(t.id, o.id) })) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.move}</button>
                           <button onClick={(e) => { e.stopPropagation(); writeNfc(t.id, t.name); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.nfc}</button>
+                          <button onClick={(e) => { e.stopPropagation(); focusPanel.includes(t.id) ? removeFromFocus(t.id) : addToFocus(t.id); }} style={{ background: "none", border: "none", color: focusPanel.includes(t.id) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 4, opacity: focusPanel.includes(t.id) ? 1 : 0.4 }}>{I.pin}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Completar?", message: `"${t.name}" → completadas.`, confirmLabel: "Completar", confirmColor: "#10b981", onConfirm: () => completeTask(t.id) }); }} style={{ background: "none", border: "none", color: "#10b981", cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.check}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Resetear?", message: `Borrar tiempo de "${t.name}".`, confirmLabel: "Resetear", confirmColor: "#f59e0b", onConfirm: () => resetTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.reset}</button>
                           <button onClick={(e) => { e.stopPropagation(); setModal({ title: "¿Eliminar?", message: `"${t.name}" permanentemente.`, confirmLabel: "Eliminar", confirmColor: "#ef4444", onConfirm: () => delTask(t.id) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.trash}</button>
