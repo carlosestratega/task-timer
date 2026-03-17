@@ -798,6 +798,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   ];
 
   const getStatus = (t) => {
+    if (t.recurring) return "todo"; // habits always reset to "Por hacer"
     if (t.kanbanStatus) return t.kanbanStatus;
     if (t.completed) return "done";
     if (t.isRunning || t.totalSeconds > 0) return "doing";
