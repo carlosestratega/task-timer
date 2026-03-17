@@ -879,10 +879,10 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                       <span style={{ color: t.catColor }}>{t.catName}</span>
                       {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
                       {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
+                      <button onClick={(e) => { e.stopPropagation(); focusPanel.includes(t.id) ? removeFromFocus(t.id) : addToFocus(t.id); }} style={{ background: "none", border: "none", color: focusPanel.includes(t.id) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 0, display: "flex", opacity: focusPanel.includes(t.id) ? 1 : 0.4 }}>{I.pin}</button>
                     </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0, alignItems: "flex-end" }}>
-                    <button onClick={(e) => { e.stopPropagation(); focusPanel.includes(t.id) ? removeFromFocus(t.id) : addToFocus(t.id); }} style={{ background: focusPanel.includes(t.id) ? "#6366f122" : "none", border: `1px solid ${focusPanel.includes(t.id) ? "#6366f1" : theme.border}`, color: focusPanel.includes(t.id) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: "3px 6px", borderRadius: 6, display: "flex", alignItems: "center", gap: 3, fontSize: 10 }}>{I.pin}{focusPanel.includes(t.id) ? "" : ""}</button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
                     {t.plannedDate && (() => { const dc = dateColor(t.plannedDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>; })()}
                     {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⚠️ {fmtDDMM(t.dueDate)}</span>; })()}
                   </div>
