@@ -234,7 +234,7 @@ function useCloudSync(user) {
 }
 
 // ─── Profile Menu ──────────────────────────────────────
-function ProfileMenu({ user, onLogin, onLogout, onBackups, syncing, theme, dk }) {
+function ProfileMenu({ user, onLogin, onLogout, onBackups, onExport, onImport, fileRef, syncing, theme, dk }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -259,6 +259,8 @@ function ProfileMenu({ user, onLogin, onLogout, onBackups, syncing, theme, dk })
               <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: syncing ? "#f59e0b" : "#10b981" }}>{I.cloud}<span>{syncing ? "Guardando..." : "Sincronizado"}</span></div>
             </div>
             <button onClick={() => { if (onBackups) onBackups(); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "12px 14px", margin: "2px 0", background: "none", border: "none", borderRadius: 8, color: theme.text, fontSize: 15, cursor: "pointer" }}>{I.reset} Backups</button>
+            <button onClick={() => { onExport(); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "12px 14px", margin: "2px 0", background: "none", border: "none", borderRadius: 8, color: theme.text, fontSize: 15, cursor: "pointer" }}>{I.dl} Exportar datos</button>
+            <button onClick={() => { fileRef.current?.click(); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "12px 14px", margin: "2px 0", background: "none", border: "none", borderRadius: 8, color: theme.text, fontSize: 15, cursor: "pointer" }}>{I.ul} Importar datos</button>
             <button onClick={() => { onLogout(); setOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "12px 14px", margin: "4px 0 2px", background: "none", border: "none", borderRadius: 8, color: "#ef4444", fontSize: 15, cursor: "pointer" }}>{I.logout} Cerrar sesión</button>
           </>) : (<>
             <div style={{ padding: "12px 14px 8px" }}><div style={{ fontSize: 15, fontWeight: 600 }}>Sin sesión</div><div style={{ fontSize: 13, color: theme.textSec, marginTop: 3 }}>Sincroniza entre dispositivos</div></div>
@@ -2125,6 +2127,126 @@ export default function App() {
   const delSession = (taskId, sessIdx) => { update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => { if (t.id !== taskId) return t; const s = [...t.sessions]; const removed = s.splice(sessIdx, 1)[0]; return { ...t, sessions: s, totalSeconds: Math.max(0, t.totalSeconds - (removed?.duration || 0)) }; }) }))); setModal(null); };
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
+
+  const generateReport = () => {
+    const todayStr = getDateStr();
+    const allT = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
+    const totalAll = allT.reduce((s, t) => s + t.totalSeconds, 0);
+    const totalSessions = allT.reduce((s, t) => s + (t.sessions || []).length, 0);
+
+    const periodReport = (label, filterFn) => {
+      const lines = [];
+      const catData = categories.map((c) => {
+        const tasks = c.tasks.map((t) => {
+          const et = ensureTask(t);
+          const fs = (et.sessions || []).filter(filterFn);
+          const pTime = fs.reduce((s, x) => s + x.duration, 0);
+          const moods = fs.filter((s) => s.mood);
+          const avgMood = moods.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moods.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moods.length)] : "-";
+          const tags = [...new Set(fs.flatMap((s) => s.tags || []))];
+          return { name: et.name, pTime, sessions: fs.length, avgMood, tags, completed: et.completed, permanent: et.permanent, recurring: !!et.recurring, plannedDate: et.plannedDate, dueDate: et.dueDate, subtasks: et.subtasks || [], goalDaily: et.goalDaily, emoji: et.emoji };
+        }).filter((t) => t.pTime > 0).sort((a, b) => b.pTime - a.pTime);
+        const catTime = tasks.reduce((s, t) => s + t.pTime, 0);
+        return { name: c.name, catTime, tasks };
+      }).filter((c) => c.catTime > 0).sort((a, b) => b.catTime - a.catTime);
+
+      const totalP = catData.reduce((s, c) => s + c.catTime, 0);
+      lines.push(`\n## ${label}`);
+      lines.push(`Tiempo total: ${fmtLong(totalP)} | Sesiones: ${catData.reduce((s, c) => s + c.tasks.reduce((s2, t) => s2 + t.sessions, 0), 0)}`);
+      lines.push("");
+      catData.forEach((c) => {
+        const pct = totalP > 0 ? Math.round((c.catTime / totalP) * 100) : 0;
+        lines.push(`### ${c.name} — ${fmtLong(c.catTime)} (${pct}%)`);
+        c.tasks.forEach((t) => {
+          const tPct = c.catTime > 0 ? Math.round((t.pTime / c.catTime) * 100) : 0;
+          const flags = [t.completed ? "✓" : "", t.permanent ? "♾️" : "", t.recurring ? "🔁" : ""].filter(Boolean).join(" ");
+          const dates = [t.plannedDate ? `📅${t.plannedDate}` : "", t.dueDate ? `⚠️${t.dueDate}` : ""].filter(Boolean).join(" ");
+          const subs = t.subtasks.length > 0 ? `${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} sub` : "";
+          lines.push(`- ${t.emoji || ""}${t.name}: ${fmtLong(t.pTime)} (${tPct}%) | ${t.sessions} ses. | ánimo: ${t.avgMood} ${flags} ${dates} ${subs}`.trim());
+          if (t.tags.length > 0) lines.push(`  Tags: ${t.tags.join(", ")}`);
+        });
+        lines.push("");
+      });
+      return lines.join("\n");
+    };
+
+    // Daily breakdown last 14 days
+    const dailyLines = ["\n## Actividad diaria (últimos 14 días)"];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const ds = getDateStr(d);
+      const dayName = d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
+      let tot = 0, sess = 0;
+      allT.forEach((t) => (t.sessions || []).forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) { tot += s.duration; sess++; } }));
+      if (tot > 0) dailyLines.push(`- ${dayName}: ${fmtLong(tot)} (${sess} sesiones)`);
+      else dailyLines.push(`- ${dayName}: sin actividad`);
+    }
+
+    // Habits
+    const habitLines = ["\n## Hábitos (mes actual)"];
+    const hMonth = new Date().getMonth(), hYear = new Date().getFullYear();
+    const hDays = new Date(hYear, hMonth + 1, 0).getDate();
+    const recTasks = allT.filter((t) => t.recurring && t.recurring.length > 0);
+    recTasks.forEach((t) => {
+      const hist = t.recurringHistory || {};
+      let total = 0, done = 0;
+      for (let d = 1; d <= hDays; d++) {
+        if ((t.recurring || []).includes(new Date(hYear, hMonth, d).getDay())) {
+          total++;
+          const ds = `${hYear}-${String(hMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          if (hist[ds]) done++;
+        }
+      }
+      habitLines.push(`- ${t.emoji || ""}${t.name}: ${done}/${total} (${total > 0 ? Math.round((done / total) * 100) : 0}%) | Días: ${["D", "L", "M", "X", "J", "V", "S"].filter((_, i) => (t.recurring || []).includes(i)).join(",")}`);
+    });
+    if (recTasks.length === 0) habitLines.push("Sin hábitos configurados");
+
+    // Tasks overview
+    const overviewLines = ["\n## Todas las tareas"];
+    categories.forEach((c) => {
+      overviewLines.push(`\n### ${c.name} (${c.tasks.length} tareas)`);
+      c.tasks.forEach((t) => {
+        const et = ensureTask(t);
+        const flags = [et.completed ? "✓ completada" : "", et.permanent ? "♾️ permanente" : "", et.recurring ? "🔁 recurrente" : ""].filter(Boolean).join(", ");
+        const dates = [et.plannedDate ? `📅${et.plannedDate}` : "", et.dueDate ? `⚠️${et.dueDate}` : ""].filter(Boolean).join(" ");
+        overviewLines.push(`- ${et.emoji || ""}${et.name} | ${fmtLong(et.totalSeconds)} | ${(et.sessions || []).length} ses. ${flags} ${dates}`.trim());
+        (et.subtasks || []).forEach((st) => overviewLines.push(`  ${st.done ? "✓" : "·"} ${st.name}`));
+      });
+    });
+
+    // Streak
+    let streak = 0; const sd = new Date();
+    for (let i = 0; i < 365; i++) { const ds = getDateStr(sd); let dt = 0; allT.forEach((t) => (t.sessions || []).forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dt += s.duration; })); if (dt > 0) streak++; else if (i > 0) break; sd.setDate(sd.getDate() - 1); }
+
+    const md = [
+      `# Informe de productividad — ${todayStr}`,
+      ``,
+      `## Resumen general`,
+      `- Tiempo total registrado: ${fmtLong(totalAll)}`,
+      `- Sesiones totales: ${totalSessions}`,
+      `- Categorías: ${categories.length}`,
+      `- Tareas activas: ${allT.filter((t) => !t.completed).length}`,
+      `- Tareas completadas: ${allT.filter((t) => t.completed).length}`,
+      `- Tareas permanentes: ${allT.filter((t) => t.permanent).length}`,
+      `- Hábitos: ${recTasks.length}`,
+      `- Racha actual: ${streak} días`,
+      periodReport("Hoy", isToday),
+      periodReport("Semana", isThisWeek),
+      periodReport("Últimos 14 días", (s) => isWithinDays(s, 14)),
+      periodReport("Último mes", (s) => isWithinDays(s, 30)),
+      periodReport("Total", () => true),
+      dailyLines.join("\n"),
+      habitLines.join("\n"),
+      overviewLines.join("\n"),
+      `\n---\nGenerado: ${new Date().toLocaleString("es-ES")}`
+    ].join("\n");
+
+    const b = new Blob([md], { type: "text/markdown" });
+    const u = URL.createObjectURL(b);
+    const a = document.createElement("a");
+    a.href = u; a.download = `informe-${todayStr}.md`; a.click();
+    URL.revokeObjectURL(u);
+  };
   const importData = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
     const r = new FileReader();
@@ -2436,7 +2558,7 @@ export default function App() {
               <div style={{ fontSize: 13, color: theme.textSec, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>{I.clock}<span>Hoy: {fmtLong(totalToday)}</span></div>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} onBackups={loadBackups} syncing={syncing} theme={theme} dk={dk} />
+              <ProfileMenu user={user} onLogin={handleLogin} onLogout={handleLogout} onBackups={loadBackups} onExport={exportData} onImport={importData} fileRef={fileRef} syncing={syncing} theme={theme} dk={dk} />
               <button onClick={() => setShowStats(true)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.chart}</button>
               <button onClick={() => setDk(!dk)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{dk ? I.sun : I.moon}</button>
             </div>
@@ -2458,8 +2580,7 @@ export default function App() {
               { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
               { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
               { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
-              { onClick: exportData, icon: I.dl, label: "Export" },
-              { onClick: () => fileRef.current?.click(), icon: I.ul, label: "Import" },
+              { onClick: () => generateReport(), icon: I.dl, label: "Informe" },
             ].map((b, i) => (
               <button key={i} onClick={b.onClick} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: "8px 2px", borderRadius: 10, border: `1px solid ${b.active ? "#ef4444" : theme.border}`, background: b.active ? "#ef444410" : "none", color: b.active ? "#ef4444" : theme.textSec, fontSize: 9, cursor: "pointer", lineHeight: 1, textAlign: "center" }}>
                 {b.icon}
