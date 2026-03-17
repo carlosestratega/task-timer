@@ -123,7 +123,7 @@ const defaultCategories = [
 
 const ensureTask = (t) => {
   const { currentSeconds, ...rest } = t;
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, emoji: null, permanent: false, calEventId: null, ...rest };
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, kanbanStatusDate: null, emoji: null, permanent: false, calEventId: null, ...rest };
 };
 
 const getWeekStart = () => {
@@ -756,7 +756,7 @@ function DraggableCard({ id, children }) {
   return <div ref={setNodeRef} {...listeners} {...attributes} style={style}>{children}</div>;
 }
 
-function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk, focusPanel, addToFocus, removeFromFocus }) {
+function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk, focusPanel, addToFocus, removeFromFocus, onStopTimer }) {
   const [kFilter, setKFilter] = useState("today");
   const [kSort, setKSort] = useState("due"); // due | planned | category
   const allTasks = categories.flatMap((c) => c.tasks.filter((t) => {
@@ -798,7 +798,11 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   ];
 
   const getStatus = (t) => {
-    if (t.recurring) return "todo"; // habits always reset to "Por hacer"
+    if (t.recurring) {
+      // Daily reset: if kanbanStatusDate is today, use saved status. Otherwise "todo"
+      if (t.kanbanStatusDate === today && t.kanbanStatus) return t.kanbanStatus;
+      return "todo";
+    }
     if (t.kanbanStatus) return t.kanbanStatus;
     if (t.completed) return "done";
     if (t.isRunning || t.totalSeconds > 0) return "doing";
@@ -817,15 +821,18 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   const isOverdue = (t) => t.dueDate && t.dueDate < today && !t.completed;
   const setStatus = (taskId, status) => {
     const todayDs = getDateStr();
+    // Stop timer if running on this task
+    if (activeId === taskId && (status === "done" || status === "todo")) {
+      onStopTimer(taskId);
+    }
     onUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
       if (t.id !== taskId) return t;
       if (t.recurring) {
-        // Recurring: mark/unmark in habit tracker, don't change completed
         if (status === "done") {
           const hist = { ...(t.recurringHistory || {}), [todayDs]: true };
-          return { ...t, recurringHistory: hist };
+          return { ...t, recurringHistory: hist, kanbanStatus: status, kanbanStatusDate: todayDs };
         }
-        return t;
+        return { ...t, kanbanStatus: status, kanbanStatusDate: todayDs };
       }
       if (status === "done") return { ...t, kanbanStatus: status, completed: true, completedAt: new Date().toISOString() };
       return { ...t, kanbanStatus: status, completed: false, completedAt: null };
@@ -2665,7 +2672,7 @@ export default function App() {
           ))}
         </div>
 
-        {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} focusPanel={focusPanel} addToFocus={addToFocus} removeFromFocus={removeFromFocus} />}
+        {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} focusPanel={focusPanel} addToFocus={addToFocus} removeFromFocus={removeFromFocus} onStopTimer={(id) => { if (activeId === id) { clearInterval(intRef.current); finishStop(id, null); } }} />}
         {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} colOrder={habitsOrder} onColOrderChange={saveHabitsOrder} />}
         {mainView === "calendar" && <CalendarView categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
         {mainView === "tasks" && <div style={{ paddingTop: 4, paddingBottom: 100 }}>
