@@ -1970,7 +1970,7 @@ export default function App() {
   const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
   const saveFocus = (arr) => { setFocusPanel(arr); try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { focusPanel: arr }); };
   const saveHabitsOrder = (arr) => { setHabitsOrder(arr); try { if (arr) localStorage.setItem("task-timer-habits-order", JSON.stringify(arr)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { habitsOrder: arr || [] }); };
-  const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-5); saveFocus(next); };
+  const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-7); saveFocus(next); };
   const removeFromFocus = (id) => { saveFocus(focusPanel.filter((x) => x !== id)); };
   const switchFocus = (id) => {
     if (activeId && activeId !== id) doStop(activeId);
@@ -2505,7 +2505,7 @@ export default function App() {
             {t.sessions.length > 0 && (
               <div style={{ marginTop: 24, maxWidth: 320, width: "90%" }}>
                 <div style={{ fontSize: 12, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Sesiones ({t.sessions.length})</div>
-                {(showAllSessions ? t.sessions : t.sessions.slice(-5)).slice().reverse().map((s, i) => {
+                {(showAllSessions ? t.sessions : t.sessions.slice(-7)).slice().reverse().map((s, i) => {
                   const si = t.sessions.length - 1 - i;
                   return (
                     <div key={si} style={{ padding: "7px 0", borderBottom: `1px solid ${theme.border}` }}>
