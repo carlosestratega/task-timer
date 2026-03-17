@@ -756,7 +756,7 @@ function DraggableCard({ id, children }) {
   return <div ref={setNodeRef} {...listeners} {...attributes} style={style}>{children}</div>;
 }
 
-function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk }) {
+function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk, focusPanel, addToFocus, removeFromFocus }) {
   const [kFilter, setKFilter] = useState("today");
   const [kSort, setKSort] = useState("due"); // due | planned | category
   const allTasks = categories.flatMap((c) => c.tasks.filter((t) => {
@@ -881,7 +881,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                       {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
                     </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, alignItems: "flex-end" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0, alignItems: "flex-end" }}>
+                    <button onClick={(e) => { e.stopPropagation(); focusPanel.includes(t.id) ? removeFromFocus(t.id) : addToFocus(t.id); }} style={{ background: focusPanel.includes(t.id) ? "#6366f122" : "none", border: `1px solid ${focusPanel.includes(t.id) ? "#6366f1" : theme.border}`, color: focusPanel.includes(t.id) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: "3px 6px", borderRadius: 6, display: "flex", alignItems: "center", gap: 3, fontSize: 10 }}>{I.pin}{focusPanel.includes(t.id) ? "" : ""}</button>
                     {t.plannedDate && (() => { const dc = dateColor(t.plannedDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>; })()}
                     {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⚠️ {fmtDDMM(t.dueDate)}</span>; })()}
                   </div>
@@ -2664,7 +2665,7 @@ export default function App() {
           ))}
         </div>
 
-        {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} />}
+        {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} focusPanel={focusPanel} addToFocus={addToFocus} removeFromFocus={removeFromFocus} />}
         {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} colOrder={habitsOrder} onColOrderChange={saveHabitsOrder} />}
         {mainView === "calendar" && <CalendarView categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
         {mainView === "tasks" && <div style={{ paddingTop: 4, paddingBottom: 100 }}>
