@@ -816,8 +816,17 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
 
   const isOverdue = (t) => t.dueDate && t.dueDate < today && !t.completed;
   const setStatus = (taskId, status) => {
+    const todayDs = getDateStr();
     onUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => {
       if (t.id !== taskId) return t;
+      if (t.recurring) {
+        // Recurring: mark/unmark in habit tracker, don't change completed
+        if (status === "done") {
+          const hist = { ...(t.recurringHistory || {}), [todayDs]: true };
+          return { ...t, recurringHistory: hist };
+        }
+        return t;
+      }
       if (status === "done") return { ...t, kanbanStatus: status, completed: true, completedAt: new Date().toISOString() };
       return { ...t, kanbanStatus: status, completed: false, completedAt: null };
     }) })));
@@ -865,7 +874,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
                   {t.emoji && <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{t.emoji}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: t.completed ? "line-through" : "none" }}>{t.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: (t.recurring ? (t.recurringHistory || {})[today] : t.completed) ? "line-through" : "none" }}>{t.name}</div>
                     <div style={{ fontSize: 10, color: theme.textSec, marginTop: 2, display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
                       <span style={{ color: t.catColor }}>{t.catName}</span>
                       {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
