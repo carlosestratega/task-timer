@@ -2128,11 +2128,21 @@ export default function App() {
 
   const exportData = () => { const b = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `task-timer-${getDateStr()}.json`; a.click(); URL.revokeObjectURL(u); };
 
-  const generateReport = () => {
+  const generateReport = (reportPeriod) => {
+    setModal(null);
     const todayStr = getDateStr();
     const allT = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
     const totalAll = allT.reduce((s, t) => s + t.totalSeconds, 0);
     const totalSessions = allT.reduce((s, t) => s + (t.sessions || []).length, 0);
+
+    // Period filter
+    const isYesterday = (s) => { const y = new Date(); y.setDate(y.getDate() - 1); return getDateStr(parseSessionDate(s)) === getDateStr(y); };
+    const isLastWeek = (s) => { const d = parseSessionDate(s); const now = new Date(); const ws = getWeekStart(); const lwEnd = new Date(ws); lwEnd.setDate(lwEnd.getDate() - 1); const lwStart = new Date(lwEnd); lwStart.setDate(lwStart.getDate() - 6); return d >= lwStart && d <= lwEnd; };
+    const isLastMonth = (s) => { const d = parseSessionDate(s); const now = new Date(); const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0); const lmStart = new Date(lmEnd.getFullYear(), lmEnd.getMonth(), 1); return d >= lmStart && d <= lmEnd; };
+
+    const periodLabels = { today: "Hoy", yesterday: "Ayer", lastweek: "Semana pasada", lastmonth: "Mes pasado", all: "Todo" };
+    const periodFilter = reportPeriod === "today" ? isToday : reportPeriod === "yesterday" ? isYesterday : reportPeriod === "lastweek" ? isLastWeek : reportPeriod === "lastmonth" ? isLastMonth : () => true;
+    const periodLabel = periodLabels[reportPeriod] || "Todo";
 
     const periodReport = (label, filterFn) => {
       const lines = [];
@@ -2170,9 +2180,11 @@ export default function App() {
       return lines.join("\n");
     };
 
-    // Daily breakdown last 14 days
-    const dailyLines = ["\n## Actividad diaria (últimos 14 días)"];
-    for (let i = 13; i >= 0; i--) {
+    // Daily breakdown for the period
+    const dailyDays = reportPeriod === "today" ? 1 : reportPeriod === "yesterday" ? 1 : reportPeriod === "lastweek" ? 7 : reportPeriod === "lastmonth" ? new Date(new Date().getFullYear(), new Date().getMonth(), 0).getDate() : 14;
+    const dailyLines = [`\n## Actividad diaria`];
+    const dayStart = reportPeriod === "yesterday" ? 1 : reportPeriod === "lastweek" ? (() => { const ws = getWeekStart(); return Math.ceil((new Date() - new Date(ws)) / 864e5) + 6; })() : reportPeriod === "lastmonth" ? (() => { const d = new Date(); return d.getDate() + new Date(d.getFullYear(), d.getMonth(), 0).getDate() - 1; })() : reportPeriod === "today" ? 0 : 13;
+    for (let i = dayStart; i >= dayStart - dailyDays + 1; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
       const ds = getDateStr(d);
       const dayName = d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
@@ -2219,7 +2231,7 @@ export default function App() {
     for (let i = 0; i < 365; i++) { const ds = getDateStr(sd); let dt = 0; allT.forEach((t) => (t.sessions || []).forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dt += s.duration; })); if (dt > 0) streak++; else if (i > 0) break; sd.setDate(sd.getDate() - 1); }
 
     const md = [
-      `# Informe de productividad — ${todayStr}`,
+      `# Informe de productividad — ${periodLabel} (${todayStr})`,
       ``,
       `## Resumen general`,
       `- Tiempo total registrado: ${fmtLong(totalAll)}`,
@@ -2230,21 +2242,17 @@ export default function App() {
       `- Tareas permanentes: ${allT.filter((t) => t.permanent).length}`,
       `- Hábitos: ${recTasks.length}`,
       `- Racha actual: ${streak} días`,
-      periodReport("Hoy", isToday),
-      periodReport("Semana", isThisWeek),
-      periodReport("Últimos 14 días", (s) => isWithinDays(s, 14)),
-      periodReport("Último mes", (s) => isWithinDays(s, 30)),
-      periodReport("Total", () => true),
+      periodReport(`Desglose: ${periodLabel}`, periodFilter),
       dailyLines.join("\n"),
       habitLines.join("\n"),
       overviewLines.join("\n"),
-      `\n---\nGenerado: ${new Date().toLocaleString("es-ES")}`
+      `\n---\nGenerado: ${new Date().toLocaleString("es-ES")} | Periodo: ${periodLabel}`
     ].join("\n");
 
     const b = new Blob([md], { type: "text/markdown" });
     const u = URL.createObjectURL(b);
     const a = document.createElement("a");
-    a.href = u; a.download = `informe-${todayStr}.md`; a.click();
+    a.href = u; a.download = `informe-${reportPeriod}-${todayStr}.md`; a.click();
     URL.revokeObjectURL(u);
   };
   const importData = (e) => {
@@ -2580,7 +2588,13 @@ export default function App() {
               { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
               { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
               { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
-              { onClick: () => generateReport(), icon: I.dl, label: "Informe" },
+              { onClick: () => setModal({ title: "Generar informe", options: [
+                { label: "Hoy", onSelect: () => generateReport("today") },
+                { label: "Ayer", onSelect: () => generateReport("yesterday") },
+                { label: "Semana pasada", onSelect: () => generateReport("lastweek") },
+                { label: "Mes pasado", onSelect: () => generateReport("lastmonth") },
+                { label: "Todo", onSelect: () => generateReport("all") },
+              ] }), icon: I.dl, label: "Informe" },
             ].map((b, i) => (
               <button key={i} onClick={b.onClick} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: "8px 2px", borderRadius: 10, border: `1px solid ${b.active ? "#ef4444" : theme.border}`, background: b.active ? "#ef444410" : "none", color: b.active ? "#ef4444" : theme.textSec, fontSize: 9, cursor: "pointer", lineHeight: 1, textAlign: "center" }}>
                 {b.icon}
