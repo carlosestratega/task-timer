@@ -1617,6 +1617,54 @@ function StatsView({ categories, theme, dk, onClose }) {
             </div>
           );
         })()}
+        {/* Timeline */}
+        <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Cronología del día</div>
+          {(() => {
+            const targetDate = period === "yesterday" ? (() => { const d = new Date(); d.setDate(d.getDate() - 1); return getDateStr(d); })() : getDateStr();
+            const daySessions = [];
+            fTasks.forEach((t) => (t.sessions || []).forEach((s) => {
+              if (getDateStr(parseSessionDate(s)) === targetDate) {
+                daySessions.push({ taskName: t.name, emoji: t.emoji, catName: t.catName, catColor: t.catColor, duration: s.duration, startedAt: s.startedAt, endedAt: s.endedAt, mood: s.mood, tags: s.tags || [], dateISO: s.dateISO });
+              }
+            }));
+            daySessions.sort((a, b) => {
+              const tA = a.dateISO ? new Date(a.dateISO).getTime() : 0;
+              const tB = b.dateISO ? new Date(b.dateISO).getTime() : 0;
+              return tA - tB;
+            });
+            if (daySessions.length === 0) return <div style={{ fontSize: 13, color: theme.textSec, fontStyle: "italic", textAlign: "center", padding: "16px 0" }}>Sin sesiones {period === "yesterday" ? "ayer" : "hoy"}</div>;
+            return (
+              <div style={{ position: "relative", paddingLeft: 20 }}>
+                <div style={{ position: "absolute", left: 8, top: 0, bottom: 0, width: 2, backgroundColor: theme.border }} />
+                {daySessions.map((s, i) => (
+                  <div key={i} style={{ position: "relative", marginBottom: 12, paddingLeft: 16 }}>
+                    <div style={{ position: "absolute", left: -16, top: 4, width: 10, height: 10, borderRadius: "50%", backgroundColor: s.catColor, border: `2px solid ${theme.bg}` }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 12, color: theme.textSec, fontVariantNumeric: "tabular-nums", minWidth: 42 }}>{s.startedAt || "—"}</span>
+                      <span style={{ fontSize: 11, color: theme.textSec }}>→</span>
+                      <span style={{ fontSize: 12, color: theme.textSec, fontVariantNumeric: "tabular-nums", minWidth: 42 }}>{s.endedAt || "—"}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: s.catColor }}>{fmtShort(s.duration)}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                      {s.emoji && <span style={{ fontSize: 12 }}>{s.emoji}</span>}
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.taskName}</span>
+                      {s.mood && <span style={{ fontSize: 12 }}>{s.mood}</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textSec, marginTop: 1 }}>
+                      {s.catName}{s.tags.length > 0 && ` · ${s.tags.join(", ")}`}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ paddingLeft: 16, fontSize: 12, color: theme.textSec, fontWeight: 600, marginTop: 8 }}>
+                  Total: {fmtLong(daySessions.reduce((a, s) => a + s.duration, 0))} · {daySessions.length} sesiones
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Heatmap */}
         <div style={{ padding: "20px 0", borderBottom: `1px solid ${theme.border}` }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Últimas 12 semanas</div>
           <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>{weeks.map((w, wi) => (<div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>{w.map((d, di) => (<div key={di} title={`${d.label}: ${fmtShort(d.tot)}`} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatColor(d.tot) }} />))}</div>))}</div>
@@ -2268,6 +2316,27 @@ export default function App() {
     let streak = 0; const sd = new Date();
     for (let i = 0; i < 365; i++) { const ds = getDateStr(sd); let dt = 0; allT.forEach((t) => (t.sessions || []).forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dt += s.duration; })); if (dt > 0) streak++; else if (i > 0) break; sd.setDate(sd.getDate() - 1); }
 
+    // Timeline
+    const timelineLines = ["\n## Cronología del día"];
+    const targetDate = reportPeriod === "yesterday" ? (() => { const d = new Date(); d.setDate(d.getDate() - 1); return getDateStr(d); })() : getDateStr();
+    const daySessions = [];
+    allT.forEach((t) => (t.sessions || []).forEach((s) => {
+      if (getDateStr(parseSessionDate(s)) === targetDate) {
+        daySessions.push({ taskName: t.name, emoji: t.emoji, catName: t.catName, duration: s.duration, startedAt: s.startedAt, endedAt: s.endedAt, mood: s.mood, tags: s.tags || [], dateISO: s.dateISO });
+      }
+    }));
+    daySessions.sort((a, b) => (a.dateISO ? new Date(a.dateISO).getTime() : 0) - (b.dateISO ? new Date(b.dateISO).getTime() : 0));
+    if (daySessions.length === 0) { timelineLines.push("Sin sesiones registradas"); }
+    else {
+      daySessions.forEach((s, i) => {
+        const time = `${s.startedAt || "?"} → ${s.endedAt || "?"}`;
+        const mood = s.mood ? ` ${s.mood}` : "";
+        const tags = s.tags.length > 0 ? ` [${s.tags.join(", ")}]` : "";
+        timelineLines.push(`${i + 1}. ${time} | ${s.emoji || ""}${s.taskName} (${s.catName}) | ${fmtShort(s.duration)}${mood}${tags}`);
+      });
+      timelineLines.push(`\nTotal día: ${fmtLong(daySessions.reduce((a, s) => a + s.duration, 0))} · ${daySessions.length} sesiones`);
+    }
+
     const md = [
       `# Informe de productividad — ${periodLabel} (${todayStr})`,
       ``,
@@ -2281,6 +2350,7 @@ export default function App() {
       `- Hábitos: ${recTasks.length}`,
       `- Racha actual: ${streak} días`,
       periodReport(`Desglose: ${periodLabel}`, periodFilter),
+      timelineLines.join("\n"),
       dailyLines.join("\n"),
       habitLines.join("\n"),
       overviewLines.join("\n"),
