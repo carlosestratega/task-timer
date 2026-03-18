@@ -1729,15 +1729,21 @@ export default function App() {
       cats.forEach((c) => c.tasks.forEach((t) => (t.sessions || []).forEach((s) => (s.tags || []).forEach((tag) => fromSessions.add(tag)))));
       const merged = [...new Set([...cloudTags, ...localTags, ...fromSessions])];
       if (merged.length > 0) { setTags(merged); saveTags(merged); if (merged.length !== cloudTags.length) saveToCloud(cats, merged); }
-      // Resume any running timer from cloud, expand only its category
-      for (const c of cats) {
-        for (const t of c.tasks) {
-          if (t.isRunning && t.startedAt) {
-            const el = calcElapsed(t.startedAt);
-            if (el > 0 && el < 86400) { setActiveId(t.id); setElapsed(el); setExpanded(new Set([c.id])); }
-            else { setCat((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === t.id ? { ...tk, isRunning: false, startedAt: null } : tk) }))); }
-            return;
-          }
+      // Resume any running timer from cloud — clean up zombies
+      const runningTasks = [];
+      for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) runningTasks.push({ task: t, cat: c }); } }
+      if (runningTasks.length > 0) {
+        // Pick the most recent one, stop all others
+        const best = runningTasks.sort((a, b) => new Date(b.task.startedAt) - new Date(a.task.startedAt))[0];
+        const el = calcElapsed(best.task.startedAt);
+        if (el > 0 && el < 86400) {
+          setActiveId(best.task.id); setElapsed(el); setExpanded(new Set([best.cat.id]));
+        }
+        // Clean all others
+        const zombieIds = runningTasks.filter((r) => r.task.id !== best.task.id || el <= 0 || el >= 86400).map((r) => r.task.id);
+        if (zombieIds.length > 0 || (el <= 0 || el >= 86400)) {
+          const cleanIds = el <= 0 || el >= 86400 ? [...zombieIds, best.task.id] : zombieIds;
+          setCat((p) => { const next = p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => cleanIds.includes(tk.id) ? { ...tk, isRunning: false, startedAt: null } : tk) })); saveLocal(next); cloudSave(next, tagsRef.current); return next; });
         }
       }
     });
@@ -1963,7 +1969,11 @@ export default function App() {
   };
 
   const doStart = (id) => {
-    if (activeId) doStop(activeId);
+    if (activeId && activeId !== id) {
+      // Instant stop without emotion picker
+      clearInterval(intRef.current);
+      finishStop(activeId, null);
+    }
     const now = new Date().toISOString();
     setCat((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, startedAt: now } : t) }));
@@ -1981,9 +1991,19 @@ export default function App() {
   const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-7); saveFocus(next); };
   const removeFromFocus = (id) => { saveFocus(focusPanel.filter((x) => x !== id)); };
   const switchFocus = (id) => {
-    if (activeId && activeId !== id) doStop(activeId);
+    if (activeId && activeId !== id) {
+      clearInterval(intRef.current);
+      finishStop(activeId, null);
+    }
+    const now = new Date().toISOString();
+    setCat((prev) => {
+      const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, startedAt: now } : t) }));
+      saveLocal(next);
+      cloudSave(next, tagsRef.current);
+      return next;
+    });
+    setActiveId(id);
     setTimerView(id);
-    doStart(id);
   };
 
   // ─── CRUD (all save to local + cloud) ──────────────
