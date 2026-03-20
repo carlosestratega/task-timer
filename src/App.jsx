@@ -1176,6 +1176,96 @@ function CalendarView({ categories, onTimerView, theme, dk }) {
   );
 }
 
+function QuickTaskModal({ categories, onAdd, onCancel, theme }) {
+  const [name, setName] = useState("");
+  const [catId, setCatId] = useState(categories.length > 0 ? categories[0].id : "");
+  const [planned, setPlanned] = useState("");
+  const [due, setDue] = useState("");
+  const [perm, setPerm] = useState(false);
+  const [rec, setRec] = useState([]);
+  const [emo, setEmo] = useState("");
+  const [subs, setSubs] = useState([]);
+  const [subInput, setSubInput] = useState("");
+  const DAYS = ["D", "L", "M", "X", "J", "V", "S"];
+  const toggleRec = (d) => setRec((p) => p.includes(d) ? p.filter((x) => x !== d) : [...p, d].sort());
+  const addSub = () => { if (!subInput.trim()) return; setSubs([...subs, { id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: subInput.trim(), done: false }]); setSubInput(""); };
+  const removeSub = (id) => setSubs(subs.filter((s) => s.id !== id));
+  const handleCreate = () => onAdd(name, catId, { plannedDate: planned || null, dueDate: due || null, permanent: perm, recurring: rec.length > 0 ? rec : null, emoji: emo || null, subtasks: subs });
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "24px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+          <button onClick={onCancel} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Nueva tarea</h1>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "20px 0" }}>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre de la tarea..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Categoría</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {categories.map((c) => (
+                <button key={c.id} onClick={() => setCatId(c.id)} style={{ padding: "6px 12px", borderRadius: 8, border: catId === c.id ? `2px solid ${c.color}` : `1px solid ${theme.border}`, backgroundColor: catId === c.id ? `${c.color}15` : "transparent", color: catId === c.id ? c.color : theme.textSec, fontSize: 13, fontWeight: catId === c.id ? 600 : 400, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c.color }} />{c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 4 }}>📅 Planificado</div>
+              <input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 4 }}>⚠️ Límite</div>
+              <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Subtareas</div>
+            {subs.map((s) => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                <span style={{ fontSize: 14, flex: 1 }}>· {s.name}</span>
+                <button onClick={() => removeSub(s.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.5 }}>{I.x}</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              <input value={subInput} onChange={(e) => setSubInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addSub(); }} placeholder="Añadir subtarea..." style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+              <button onClick={addSub} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, cursor: "pointer", fontSize: 14 }}>+</button>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Repetir</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {DAYS.map((d, i) => (
+                <button key={i} onClick={() => toggleRec(i)} style={{ width: 36, height: 36, borderRadius: 8, border: rec.includes(i) ? "none" : `1px solid ${theme.border}`, backgroundColor: rec.includes(i) ? "#6366f1" : "transparent", color: rec.includes(i) ? "#fff" : theme.textSec, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{d}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <button onClick={() => setRec([1, 2, 3, 4, 5])} style={{ fontSize: 12, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>L-V</button>
+              <button onClick={() => setRec([0, 1, 2, 3, 4, 5, 6])} style={{ fontSize: 12, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Todos</button>
+              <button onClick={() => setRec([])} style={{ fontSize: 12, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Ninguno</button>
+            </div>
+          </div>
+          {rec.length > 0 && (
+            <div>
+              <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 4 }}>Emoji del hábito</div>
+              <input value={emo} onChange={(e) => setEmo(e.target.value)} placeholder="🏋️" maxLength={4} style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 20, outline: "none", width: 70, textAlign: "center" }} />
+            </div>
+          )}
+          <div onClick={() => setPerm(!perm)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", cursor: "pointer" }}>
+            <div style={{ width: 40, height: 22, borderRadius: 11, backgroundColor: perm ? "#8b5cf6" : theme.surface, position: "relative", transition: "background .2s" }}><div style={{ width: 18, height: 18, borderRadius: "50%", backgroundColor: "#fff", position: "absolute", top: 2, left: perm ? 20 : 2, transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} /></div>
+            <div><div style={{ fontSize: 13, color: theme.text }}>Permanente</div><div style={{ fontSize: 11, color: theme.textSec }}>No aparece en Kanban</div></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8 }}>
+            <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
+            <button onClick={handleCreate} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", opacity: name.trim() ? 1 : 0.5 }}>Crear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StatsView({ categories, theme, dk, onClose }) {
   const [period, setPeriod] = useState("today");
   const [filter, setFilter] = useState("all");
@@ -1690,6 +1780,7 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0); // display-only seconds counter
   const [showNewCat, setShowNewCat] = useState(false);
   const [showNewTask, setShowNewTask] = useState(null);
+  const [showQuickTask, setShowQuickTask] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newTaskName, setNewTaskName] = useState("");
   const [timerView, setTimerView] = useState(null);
@@ -1959,9 +2050,9 @@ export default function App() {
 
   // Block body scroll when overlays are open
   useEffect(() => {
-    document.body.style.overflow = (timerView || showStats || showBackups || showBulkAdd || showBulkDelete || showOverview) ? "hidden" : "";
+    document.body.style.overflow = (timerView || showStats || showBackups || showBulkAdd || showBulkDelete || showOverview || showQuickTask) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [timerView, showStats, showBackups, showBulkAdd, showBulkDelete, showOverview]);
+  }, [timerView, showStats, showBackups, showBulkAdd, showBulkDelete, showOverview, showQuickTask]);
 
   const theme = dk
     ? { bg: "#0a0a0a", card: "#141414", border: "#252525", text: "#f5f5f5", textSec: "#737373", accent: "#ffffff", surface: "#1c1c1c" }
@@ -2079,6 +2170,7 @@ export default function App() {
   const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (activeId === t.id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === t.id) setTimerView(null); }); update((p) => p.filter((x) => x.id !== id)); setModal(null); };
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
+  const quickAddTask = (name, catId, extras = {}) => { if (!name.trim() || !catId) return; const n = { id: `t-${Date.now()}`, name: name.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: extras.subtasks || [], notes: "", dueDate: extras.dueDate || null, plannedDate: extras.plannedDate || null, recurring: extras.recurring || null, recurringHistory: {}, emoji: extras.emoji || null, permanent: extras.permanent || false }; update((p) => p.map((c) => c.id === catId ? { ...c, tasks: [...c.tasks, n] } : c)); setExpanded((p) => new Set([...p, catId])); setShowQuickTask(false); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
   const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji, permanent) => {
     if (!name.trim()) return;
@@ -2430,6 +2522,7 @@ export default function App() {
 
       {/* Bulk Add */}
       {showBulkAdd && <BulkAddModal categories={categories} onAdd={bulkAdd} onCancel={() => setShowBulkAdd(false)} theme={theme} dk={dk} />}
+      {showQuickTask && <QuickTaskModal categories={categories} onAdd={quickAddTask} onCancel={() => setShowQuickTask(false)} theme={theme} />}
       {showBulkDelete && <BulkDeleteView categories={categories} onDelete={bulkDelete} onCancel={() => setShowBulkDelete(false)} theme={theme} dk={dk} />}
       {showOverview && <OverviewView categories={categories} onClose={() => setShowOverview(false)} theme={theme} dk={dk} />}
 
@@ -2689,13 +2782,14 @@ export default function App() {
           <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4 }}>
             {[
               { onClick: () => { setShowNewCat(true); setShowNewTask(null); }, icon: I.plus, label: "Categoría" },
+              { onClick: () => setShowQuickTask(true), icon: I.plus, label: "Tarea" },
               { onClick: () => setShowBulkAdd(true), icon: I.paste, label: "Pegar" },
               { onClick: () => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }, icon: I.selectAll, label: "Seleccionar", active: selectMode },
+              { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
+              { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
               { onClick: () => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id))), icon: expanded.size > 0 ? I.collapseAll : I.chev, label: expanded.size > 0 ? "Cerrar" : "Abrir" },
               { onClick: () => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); }), icon: I.subtasks, label: "Subs", active: showSubsMain.size > 0 },
-              { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
               { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
-              { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
               { onClick: () => setModal({ title: "Generar informe", options: [
                 { label: "Hoy", onSelect: () => generateReport("today") },
                 { label: "Ayer", onSelect: () => generateReport("yesterday") },
