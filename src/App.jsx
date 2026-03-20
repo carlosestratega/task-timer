@@ -109,7 +109,19 @@ const CAT_COLORS = [
   "#d946ef", "#0ea5e9", "#22c55e", "#fb923c", "#f43f5e", "#2dd4bf", "#a3e635", "#818cf8",
   "#f472b6", "#34d399", "#fbbf24", "#38bdf8", "#c084fc", "#fb7185", "#4ade80", "#facc15",
 ];
-
+const PRIORITIES = [
+  { key: "critical", label: "Crítica", color: "#ef4444", emoji: "🔴", score: 5 },
+  { key: "high", label: "Alta", color: "#f97316", emoji: "🟠", score: 4 },
+  { key: "medium", label: "Media", color: "#eab308", emoji: "🟡", score: 3 },
+  { key: "low", label: "Baja", color: "#3b82f6", emoji: "🔵", score: 2 },
+];
+const WEIGHTS = [
+  { key: "XXL", label: "XXL", score: 6 }, { key: "XL", label: "XL", score: 5 },
+  { key: "L", label: "L", score: 4 }, { key: "M", label: "M", score: 3 },
+  { key: "S", label: "S", score: 2 }, { key: "XS", label: "XS", score: 1 },
+];
+const getPriority = (k) => PRIORITIES.find((p) => p.key === k);
+const getWeight = (k) => WEIGHTS.find((w) => w.key === k);
 const defaultCategories = [
   { id: "cat-1", name: "Contenido", color: "#6366f1", tasks: [
     { id: "t-1", name: "Creación de contenido RRSS", totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" },
@@ -123,7 +135,7 @@ const defaultCategories = [
 
 const ensureTask = (t) => {
   const { currentSeconds, ...rest } = t;
-  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, kanbanStatusDate: null, emoji: null, permanent: false, calEventId: null, ...rest };
+  return { subtasks: [], notes: "", goalDaily: 0, completed: false, startedAt: null, isRunning: false, sessions: [], totalSeconds: 0, dueDate: null, plannedDate: null, recurring: null, recurringHistory: {}, kanbanStatus: null, kanbanStatusDate: null, emoji: null, permanent: false, calEventId: null, priority: null, weight: null, ...rest };
 };
 
 const getWeekStart = () => {
@@ -301,7 +313,7 @@ function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel
   );
 }
 
-function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange, dueDate: initDue, plannedDate: initPlanned, recurring: initRecurring, emoji: initEmoji, permanent: initPermanent, onDatesChange }) {
+function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange, goalDaily, onGoalChange, dueDate: initDue, plannedDate: initPlanned, recurring: initRecurring, emoji: initEmoji, permanent: initPermanent, priority: initPri, weight: initWei, onDatesChange }) {
   const [val, setVal] = useState(value || "");
   const [col, setCol] = useState(color || "");
   const [goal, setGoal] = useState(goalDaily ? Math.round(goalDaily / 60) : 0);
@@ -310,12 +322,15 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
   const [rec, setRec] = useState(initRecurring || []);
   const [emo, setEmo] = useState(initEmoji || "");
   const [perm, setPerm] = useState(!!initPermanent);
+  const [pri, setPri] = useState(initPri || null);
+  const [wei, setWei] = useState(initWei || null);
   const DAYS = ["D", "L", "M", "X", "J", "V", "S"];
   const toggleRec = (d) => setRec((p) => p.includes(d) ? p.filter((x) => x !== d) : [...p, d].sort());
+  const doSave = () => onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null, perm, pri, wei);
   return (
     <Modal title={title} onCancel={onCancel} theme={theme}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null, perm); }} placeholder="Nombre..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
+        <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doSave(); }} placeholder="Nombre..." style={{ padding: "12px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 16, outline: "none" }} />
         {onColorChange && (
           <div>
             <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 8 }}>Color</div>
@@ -359,15 +374,31 @@ function EditModal({ title, value, onSave, onCancel, theme, color, onColorChange
             </div>
           )}
         </>)}
-        {onDatesChange && (
+        {onDatesChange && (<>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Prioridad</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {PRIORITIES.map((p) => (
+                <button key={p.key} onClick={() => setPri(pri === p.key ? null : p.key)} style={{ padding: "5px 10px", borderRadius: 8, border: pri === p.key ? `2px solid ${p.color}` : `1px solid ${theme.border}`, backgroundColor: pri === p.key ? p.color + "22" : "transparent", color: pri === p.key ? p.color : theme.textSec, fontSize: 12, fontWeight: pri === p.key ? 600 : 400, cursor: "pointer" }}>{p.emoji} {p.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Peso</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {WEIGHTS.map((w) => (
+                <button key={w.key} onClick={() => setWei(wei === w.key ? null : w.key)} style={{ padding: "5px 12px", borderRadius: 8, border: wei === w.key ? "2px solid #8b5cf6" : `1px solid ${theme.border}`, backgroundColor: wei === w.key ? "#8b5cf622" : "transparent", color: wei === w.key ? "#8b5cf6" : theme.textSec, fontSize: 12, fontWeight: wei === w.key ? 700 : 400, cursor: "pointer" }}>{w.label}</button>
+              ))}
+            </div>
+          </div>
           <div onClick={() => setPerm(!perm)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer" }}>
             <div style={{ width: 40, height: 22, borderRadius: 11, backgroundColor: perm ? "#8b5cf6" : theme.surface, position: "relative", transition: "background .2s" }}><div style={{ width: 18, height: 18, borderRadius: "50%", backgroundColor: "#fff", position: "absolute", top: 2, left: perm ? 20 : 2, transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} /></div>
             <div><div style={{ fontSize: 13, color: theme.text }}>Permanente</div><div style={{ fontSize: 11, color: theme.textSec }}>No aparece en Kanban (ej: comer, aseo)</div></div>
           </div>
-        )}
+        </>)}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onCancel} style={{ padding: "10px 18px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: "transparent", color: theme.text, fontSize: 15, cursor: "pointer" }}>Cancelar</button>
-          <button onClick={() => onSave(val, col, goal * 60, due || null, planned || null, rec.length > 0 ? rec : null, emo || null, perm)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+          <button onClick={() => doSave()} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
     </Modal>
@@ -814,6 +845,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   const sortTasks = (tasks) => [...tasks].sort((a, b) => {
     if (kSort === "planned") return (a.plannedDate || a.dueDate || "9999").localeCompare(b.plannedDate || b.dueDate || "9999");
     if (kSort === "category") return a.catName.localeCompare(b.catName) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+    if (kSort === "priority") { const pa = getPriority(a.priority)?.score || 0; const pb = getPriority(b.priority)?.score || 0; return pb - pa || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); }
+    if (kSort === "weight") { const wa = getWeight(a.weight)?.score || 0; const wb = getWeight(b.weight)?.score || 0; return wb - wa || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); }
     return (a.dueDate || a.plannedDate || "9999").localeCompare(b.dueDate || b.plannedDate || "9999");
   });
   Object.keys(grouped).forEach((k) => { grouped[k] = sortTasks(grouped[k]); });
@@ -859,7 +892,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, alignItems: "center" }}>
         <span style={{ fontSize: 11, color: theme.textSec }}>Ordenar:</span>
-        {[{ key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }, { key: "category", label: "Categoría" }].map((s) => (
+        {[{ key: "due", label: "⚠️ Límite" }, { key: "planned", label: "📅 Planificado" }, { key: "priority", label: "🔴 Prioridad" }, { key: "weight", label: "🏋️ Peso" }, { key: "category", label: "Categoría" }].map((s) => (
           <button key={s.key} onClick={() => setKSort(s.key)} style={{ padding: "4px 10px", borderRadius: 14, border: kSort === s.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kSort === s.key ? theme.surface : "transparent", color: kSort === s.key ? theme.text : theme.textSec, fontSize: 11, fontWeight: kSort === s.key ? 600 : 400, cursor: "pointer" }}>{s.label}</button>
         ))}
       </div>
@@ -886,6 +919,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                       <span style={{ color: t.catColor }}>{t.catName}</span>
                       {t.totalSeconds > 0 && <span>· {fmtShort(t.totalSeconds + (activeId === t.id ? elapsed : 0))}</span>}
                       {(t.subtasks || []).length > 0 && <span>· {(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length}</span>}
+                      {t.priority && (() => { const p = getPriority(t.priority); return p ? <span style={{ color: p.color }}>{p.emoji}</span> : null; })()}
+                      {t.weight && <span style={{ color: "#8b5cf6", fontWeight: 600 }}>{t.weight}</span>}
                       <button onClick={(e) => { e.stopPropagation(); focusPanel.includes(t.id) ? removeFromFocus(t.id) : addToFocus(t.id); }} style={{ background: "none", border: "none", color: focusPanel.includes(t.id) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 0, display: "flex", opacity: focusPanel.includes(t.id) ? 1 : 0.4 }}>{I.pin}</button>
                     </div>
                   </div>
@@ -1186,11 +1221,13 @@ function QuickTaskModal({ categories, onAdd, onCancel, theme }) {
   const [emo, setEmo] = useState("");
   const [subs, setSubs] = useState([]);
   const [subInput, setSubInput] = useState("");
+  const [pri, setPri] = useState(null);
+  const [wei, setWei] = useState(null);
   const DAYS = ["D", "L", "M", "X", "J", "V", "S"];
   const toggleRec = (d) => setRec((p) => p.includes(d) ? p.filter((x) => x !== d) : [...p, d].sort());
   const addSub = () => { if (!subInput.trim()) return; setSubs([...subs, { id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: subInput.trim(), done: false }]); setSubInput(""); };
   const removeSub = (id) => setSubs(subs.filter((s) => s.id !== id));
-  const handleCreate = () => onAdd(name, catId, { plannedDate: planned || null, dueDate: due || null, permanent: perm, recurring: rec.length > 0 ? rec : null, emoji: emo || null, subtasks: subs });
+  const handleCreate = () => onAdd(name, catId, { plannedDate: planned || null, dueDate: due || null, permanent: perm, recurring: rec.length > 0 ? rec : null, emoji: emo || null, subtasks: subs, priority: pri, weight: wei });
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 100, overflow: "auto", animation: "fadeIn .2s" }}>
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px" }}>
@@ -1252,6 +1289,22 @@ function QuickTaskModal({ categories, onAdd, onCancel, theme }) {
               <input value={emo} onChange={(e) => setEmo(e.target.value)} placeholder="🏋️" maxLength={4} style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 20, outline: "none", width: 70, textAlign: "center" }} />
             </div>
           )}
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Prioridad</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {PRIORITIES.map((p) => (
+                <button key={p.key} onClick={() => setPri(pri === p.key ? null : p.key)} style={{ padding: "5px 10px", borderRadius: 8, border: pri === p.key ? `2px solid ${p.color}` : `1px solid ${theme.border}`, backgroundColor: pri === p.key ? p.color + "22" : "transparent", color: pri === p.key ? p.color : theme.textSec, fontSize: 12, fontWeight: pri === p.key ? 600 : 400, cursor: "pointer" }}>{p.emoji} {p.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Peso</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {WEIGHTS.map((w) => (
+                <button key={w.key} onClick={() => setWei(wei === w.key ? null : w.key)} style={{ padding: "5px 12px", borderRadius: 8, border: wei === w.key ? "2px solid #8b5cf6" : `1px solid ${theme.border}`, backgroundColor: wei === w.key ? "#8b5cf622" : "transparent", color: wei === w.key ? "#8b5cf6" : theme.textSec, fontSize: 12, fontWeight: wei === w.key ? 700 : 400, cursor: "pointer" }}>{w.label}</button>
+              ))}
+            </div>
+          </div>
           <div onClick={() => setPerm(!perm)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", cursor: "pointer" }}>
             <div style={{ width: 40, height: 22, borderRadius: 11, backgroundColor: perm ? "#8b5cf6" : theme.surface, position: "relative", transition: "background .2s" }}><div style={{ width: 18, height: 18, borderRadius: "50%", backgroundColor: "#fff", position: "absolute", top: 2, left: perm ? 20 : 2, transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} /></div>
             <div><div style={{ fontSize: 13, color: theme.text }}>Permanente</div><div style={{ fontSize: 11, color: theme.textSec }}>No aparece en Kanban</div></div>
@@ -2170,13 +2223,13 @@ export default function App() {
   const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (activeId === t.id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === t.id) setTimerView(null); }); update((p) => p.filter((x) => x.id !== id)); setModal(null); };
   const addCat = () => { if (!newCatName.trim()) return; const n = { id: `cat-${Date.now()}`, name: newCatName.trim(), color: CAT_COLORS[categories.length % CAT_COLORS.length], tasks: [] }; update((p) => [...p, n]); setExpanded((p) => new Set([...p, n.id])); setNewCatName(""); setShowNewCat(false); };
   const addTask = (cid) => { if (!newTaskName.trim()) return; const n = { id: `t-${Date.now()}`, name: newTaskName.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: [], notes: "" }; update((p) => p.map((c) => c.id === cid ? { ...c, tasks: [...c.tasks, n] } : c)); setNewTaskName(""); setShowNewTask(null); };
-  const quickAddTask = (name, catId, extras = {}) => { if (!name.trim() || !catId) return; const n = { id: `t-${Date.now()}`, name: name.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: extras.subtasks || [], notes: "", dueDate: extras.dueDate || null, plannedDate: extras.plannedDate || null, recurring: extras.recurring || null, recurringHistory: {}, emoji: extras.emoji || null, permanent: extras.permanent || false }; update((p) => p.map((c) => c.id === catId ? { ...c, tasks: [...c.tasks, n] } : c)); setExpanded((p) => new Set([...p, catId])); setShowQuickTask(false); };
+  const quickAddTask = (name, catId, extras = {}) => { if (!name.trim() || !catId) return; const n = { id: `t-${Date.now()}`, name: name.trim(), totalSeconds: 0, isRunning: false, startedAt: null, completed: false, goalDaily: 0, sessions: [], subtasks: extras.subtasks || [], notes: "", dueDate: extras.dueDate || null, plannedDate: extras.plannedDate || null, recurring: extras.recurring || null, recurringHistory: {}, emoji: extras.emoji || null, permanent: extras.permanent || false, priority: extras.priority || null, weight: extras.weight || null }; update((p) => p.map((c) => c.id === catId ? { ...c, tasks: [...c.tasks, n] } : c)); setExpanded((p) => new Set([...p, catId])); setShowQuickTask(false); };
   const editCatSave = (id, name, color) => { if (!name.trim()) return; update((p) => p.map((c) => c.id === id ? { ...c, name: name.trim(), color } : c)); setEditModal(null); };
-  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji, permanent) => {
+  const editTaskSave = (id, name, _c, goalDaily, dueDate, plannedDate, recurring, emoji, permanent, priority, weight) => {
     if (!name.trim()) return;
     const catName = categories.find((c) => c.tasks.some((t) => t.id === id))?.name || "";
     const oldTask = categories.flatMap((c) => c.tasks).find((t) => t.id === id);
-    update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring, emoji: emoji !== undefined ? emoji : t.emoji, permanent: permanent !== undefined ? permanent : t.permanent } : t) })));
+    update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, name: name.trim(), ...(goalDaily !== undefined ? { goalDaily } : {}), dueDate: dueDate !== undefined ? dueDate : t.dueDate, plannedDate: plannedDate !== undefined ? plannedDate : t.plannedDate, recurring: recurring !== undefined ? recurring : t.recurring, emoji: emoji !== undefined ? emoji : t.emoji, permanent: permanent !== undefined ? permanent : t.permanent, priority: priority !== undefined ? priority : t.priority, weight: weight !== undefined ? weight : t.weight } : t) })));
     // Gcal sync
     const token = calToken || localStorage.getItem("task-timer-cal-token");
     if (token && (dueDate || plannedDate)) {
@@ -2202,27 +2255,25 @@ export default function App() {
       return dates[0] || "9999";
     };
     const urgency = (d) => { if (!d) return 99; if (d < today) return 0; if (d === today) return 1; if (d >= ws && d <= weStr) return 2; return 3 + d.localeCompare(today); };
+    const priScore = (task) => { const p = getPriority(task.priority); return p ? (6 - p.score) : 5; }; // lower = higher priority
+    const weiScore = (task) => { const w = getWeight(task.weight); return w ? (7 - w.score) : 7; }; // lower = heavier
     if (mode === "rutina") {
-      // permanent first (by sessions desc), then planned, then due
       if (t.permanent) return -100000 + (99999 - (t.sessions || []).length);
       const pd = t.plannedDate || "9999";
       const dd = t.dueDate || "9999";
-      return pd.localeCompare("0") * 1000 + dd.localeCompare("0");
+      return priScore(t) * 100000 + pd.localeCompare("0") * 1000 + dd.localeCompare("0");
     }
     if (mode === "prioridad") {
-      // dated first (closest), permanent last
       if (t.permanent) return 999999;
-      const nd = nearestDate(t);
-      return urgency(nd) * 10000 + nd.localeCompare("0");
+      return priScore(t) * 100000 + weiScore(t) * 10000 + urgency(nearestDate(t)) * 100;
     }
     if (mode === "urgente") {
-      const nd = nearestDate(t);
       if (t.permanent) return 500000 + (99999 - (t.sessions || []).length);
-      return urgency(nd) * 10000 + nd.localeCompare("0");
+      return urgency(nearestDate(t)) * 100000 + priScore(t) * 1000 + nearestDate(t).localeCompare("0");
     }
     return 0;
   };
-  const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (catId && c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); if (sortBy === "planned") { const da = a.plannedDate || "9999"; const db = b.plannedDate || "9999"; return da.localeCompare(db) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); } if (sortBy === "due") { const da = a.dueDate || "9999"; const db = b.dueDate || "9999"; return da.localeCompare(db) || (a.plannedDate || "9999").localeCompare(b.plannedDate || "9999"); } if (sortBy === "rutina" || sortBy === "prioridad" || sortBy === "urgente") return smartScore(a, sortBy) - smartScore(b, sortBy); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
+  const sortTasks = (catId, sortBy) => { update((p) => p.map((c) => { if (catId && c.id !== catId) return c; const sorted = [...c.tasks].sort((a, b) => { if (sortBy === "alpha") return a.name.localeCompare(b.name, "es"); if (sortBy === "alpha-desc") return b.name.localeCompare(a.name, "es"); if (sortBy === "time") return b.totalSeconds - a.totalSeconds; if (sortBy === "time-asc") return a.totalSeconds - b.totalSeconds; if (sortBy === "sessions") return b.sessions.length - a.sessions.length; if (sortBy === "recent") return (b.sessions.length > 0 ? new Date(b.sessions[b.sessions.length - 1].dateISO || 0).getTime() : 0) - (a.sessions.length > 0 ? new Date(a.sessions[a.sessions.length - 1].dateISO || 0).getTime() : 0); if (sortBy === "planned") { const da = a.plannedDate || "9999"; const db = b.plannedDate || "9999"; return da.localeCompare(db) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); } if (sortBy === "due") { const da = a.dueDate || "9999"; const db = b.dueDate || "9999"; return da.localeCompare(db) || (a.plannedDate || "9999").localeCompare(b.plannedDate || "9999"); } if (sortBy === "priority") { const pa = getPriority(a.priority)?.score || 0; const pb = getPriority(b.priority)?.score || 0; return pb - pa || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); } if (sortBy === "weight") { const wa = getWeight(a.weight)?.score || 0; const wb = getWeight(b.weight)?.score || 0; return wb - wa || (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); } if (sortBy === "rutina" || sortBy === "prioridad" || sortBy === "urgente") return smartScore(a, sortBy) - smartScore(b, sortBy); return 0; }); return { ...c, tasks: sorted }; })); setModal(null); };
   const sortAllTasks = (sortBy) => { sortTasks(null, sortBy); };
 
   // dnd-kit sensors - only activate from grip handle
@@ -2786,7 +2837,7 @@ export default function App() {
               { onClick: () => setShowBulkAdd(true), icon: I.paste, label: "Pegar" },
               { onClick: () => { setSelectMode((p) => !p); setSelectedTasks(new Set()); }, icon: I.selectAll, label: "Seleccionar", active: selectMode },
               { onClick: () => setShowBulkDelete(true), icon: I.trash, label: "Papelera" },
-              { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
+              { onClick: () => setModal({ title: "Ordenar todas", options: [ { label: "🔄 Rutina", onSelect: () => sortAllTasks("rutina") }, { label: "🎯 Prioridad", onSelect: () => sortAllTasks("prioridad") }, { label: "🔥 Urgente", onSelect: () => sortAllTasks("urgente") }, { label: "🔴 Por prioridad", onSelect: () => sortAllTasks("priority") }, { label: "🏋️ Por peso", onSelect: () => sortAllTasks("weight") }, { label: "📅 Planificado", onSelect: () => sortAllTasks("planned") }, { label: "⚠️ Límite", onSelect: () => sortAllTasks("due") }, { label: "A → Z", onSelect: () => sortAllTasks("alpha") }, { label: "Más tiempo", onSelect: () => sortAllTasks("time") }, { label: "Más reciente", onSelect: () => sortAllTasks("recent") } ] }), icon: I.sort, label: "Ordenar" },
               { onClick: () => setExpanded((p) => p.size > 0 ? new Set() : new Set(categories.map((c) => c.id))), icon: expanded.size > 0 ? I.collapseAll : I.chev, label: expanded.size > 0 ? "Cerrar" : "Abrir" },
               { onClick: () => setShowSubsMain((p) => { const allWithSubs = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.subtasks || []).length > 0).map((t) => t.id)); return p.size > 0 ? new Set() : new Set(allWithSubs); }), icon: I.subtasks, label: "Subs", active: showSubsMain.size > 0 },
               { onClick: () => setShowOverview(true), icon: I.list, label: "Vista" },
@@ -2888,7 +2939,7 @@ export default function App() {
                         Todas
                       </button>;
                     })() : (<>
-                    <button onClick={() => setModal({ title: `Ordenar "${cat.name}"`, options: [ { label: "A → Z", onSelect: () => sortTasks(cat.id, "alpha") }, { label: "Z → A", onSelect: () => sortTasks(cat.id, "alpha-desc") }, { label: "📅 Planificado", onSelect: () => sortTasks(cat.id, "planned") }, { label: "⚠️ Límite", onSelect: () => sortTasks(cat.id, "due") }, { label: "Más tiempo", onSelect: () => sortTasks(cat.id, "time") }, { label: "Menos tiempo", onSelect: () => sortTasks(cat.id, "time-asc") }, { label: "Más sesiones", onSelect: () => sortTasks(cat.id, "sessions") }, { label: "Más reciente", onSelect: () => sortTasks(cat.id, "recent") } ] })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.sort}</button>
+                    <button onClick={() => setModal({ title: `Ordenar "${cat.name}"`, options: [ { label: "A → Z", onSelect: () => sortTasks(cat.id, "alpha") }, { label: "Z → A", onSelect: () => sortTasks(cat.id, "alpha-desc") }, { label: "🔴 Prioridad", onSelect: () => sortTasks(cat.id, "priority") }, { label: "🏋️ Peso", onSelect: () => sortTasks(cat.id, "weight") }, { label: "📅 Planificado", onSelect: () => sortTasks(cat.id, "planned") }, { label: "⚠️ Límite", onSelect: () => sortTasks(cat.id, "due") }, { label: "Más tiempo", onSelect: () => sortTasks(cat.id, "time") }, { label: "Menos tiempo", onSelect: () => sortTasks(cat.id, "time-asc") }, { label: "Más sesiones", onSelect: () => sortTasks(cat.id, "sessions") }, { label: "Más reciente", onSelect: () => sortTasks(cat.id, "recent") } ] })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.sort}</button>
                     <button onClick={() => moveCat(cat.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === 0 ? 0.15 : 0.5 }}>{I.up}</button>
                     <button onClick={() => moveCat(cat.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: catIdx === categories.length - 1 ? 0.15 : 0.5 }}>{I.down}</button>
                     <button onClick={() => setEditModal({ title: "Editar categoría", value: cat.name, color: cat.color, onColorChange: true, onSave: (n, c) => editCatSave(cat.id, n, c) })} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.5 }}>{I.edit}</button>
@@ -2926,6 +2977,8 @@ export default function App() {
                                 {t.plannedDate && <span style={{ color: dateColor(t.plannedDate, t.completed) || theme.textSec }}>· 📅 {t.plannedDate.slice(8)}-{t.plannedDate.slice(5,7)}</span>}
                                 {t.dueDate && <span style={{ color: dateColor(t.dueDate, t.completed) || theme.textSec }}>· ⚠️ {t.dueDate.slice(8)}-{t.dueDate.slice(5,7)}</span>}
                                 {t.recurring && <span style={{ color: "#8b5cf6" }}>· 🔁</span>}
+                                {t.priority && (() => { const p = getPriority(t.priority); return p ? <span style={{ color: p.color }}>· {p.emoji}</span> : null; })()}
+                                {t.weight && <span style={{ color: "#8b5cf6", fontWeight: 600 }}>· {t.weight}</span>}
                               </div>
                             </div>
                           </div>
@@ -2962,7 +3015,7 @@ export default function App() {
                         {!selectMode && <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 6, justifyContent: "flex-end" }}>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, -1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === 0 ? 0.15 : 0.4 }}>{I.up}</button>
                           <button onClick={(e) => { e.stopPropagation(); moveTask(cat.id, t.id, 1); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: ti === aTasks.length - 1 ? 0.15 : 0.4 }}>{I.down}</button>
-                          <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onDatesChange: true, dueDate: t.dueDate, plannedDate: t.plannedDate, recurring: t.recurring, emoji: t.emoji, permanent: t.permanent, onSave: (n, _c, g, dd, pd, rec, emo, perm) => editTaskSave(t.id, n, _c, g, dd, pd, rec, emo, perm) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
+                          <button onClick={(e) => { e.stopPropagation(); setEditModal({ title: "Editar tarea", value: t.name, goalDaily: t.goalDaily, onGoalChange: true, onDatesChange: true, dueDate: t.dueDate, plannedDate: t.plannedDate, recurring: t.recurring, emoji: t.emoji, permanent: t.permanent, priority: t.priority, weight: t.weight, onSave: (n, _c, g, dd, pd, rec, emo, perm, pri, wei) => editTaskSave(t.id, n, _c, g, dd, pd, rec, emo, perm, pri, wei) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.edit}</button>
                           <button onClick={(e) => { e.stopPropagation(); const others = categories.filter((x) => x.id !== cat.id); if (others.length === 0) return; setModal({ title: "Mover tarea", message: `"${t.name}" a:`, options: others.map((o) => ({ label: o.name, color: o.color, onSelect: () => moveTaskToCat(t.id, o.id) })) }); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.move}</button>
                           <button onClick={(e) => { e.stopPropagation(); writeNfc(t.id, t.name); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 4, opacity: 0.4 }}>{I.nfc}</button>
                           <button onClick={(e) => { e.stopPropagation(); focusPanel.includes(t.id) ? removeFromFocus(t.id) : addToFocus(t.id); }} style={{ background: "none", border: "none", color: focusPanel.includes(t.id) ? "#6366f1" : theme.textSec, cursor: "pointer", padding: 4, opacity: focusPanel.includes(t.id) ? 1 : 0.4 }}>{I.pin}</button>
