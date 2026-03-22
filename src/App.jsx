@@ -2056,16 +2056,33 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const nfcId = params.get("nfc");
     if (!nfcId) return;
-    // Wait for categories to be loaded
+    // Must wait for cloud init to complete
+    if (!initDone.current) return;
     const found = categories.flatMap((c) => c.tasks).find((t) => t.id === nfcId);
-    if (!found && !initDone.current) return; // wait for cloud
     if (found) {
       nfcHandled.current = true;
-      // Clean URL
       window.history.replaceState({}, "", window.location.pathname);
-      // Toggle timer
-      setTimeout(() => { if (activeId === nfcId) { doStop(nfcId); } else { doStart(nfcId); } }, 300);
-    } else if (initDone.current) {
+      setTimeout(() => {
+        if (activeId === nfcId) {
+          // Instant stop without emotion picker - saves immediately
+          clearInterval(intRef.current);
+          finishStop(nfcId, null);
+        } else {
+          // Stop any running task first
+          if (activeId) { clearInterval(intRef.current); finishStop(activeId, null); }
+          // Start the NFC task
+          const now = new Date().toISOString();
+          setCat((prev) => {
+            const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === nfcId ? { ...t, isRunning: true, startedAt: now } : t) }));
+            saveLocal(next);
+            cloudSave(next, tagsRef.current);
+            return next;
+          });
+          setActiveId(nfcId);
+          setTimerView(nfcId);
+        }
+      }, 500);
+    } else {
       nfcHandled.current = true;
       window.history.replaceState({}, "", window.location.pathname);
     }
