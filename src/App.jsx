@@ -813,10 +813,11 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
     return dates.some((d) => d >= start && d <= end);
   };
 
-  const filtered = kFilter === "today" ? allTasks.filter((t) => t.recurring || t.plannedDate === today || t.dueDate === today || t.isRunning)
+  const isOverdueTask = (t) => t.dueDate && t.dueDate < today && !t.completed;
+  const filtered = kFilter === "today" ? allTasks.filter((t) => t.recurring || t.plannedDate === today || t.dueDate === today || isOverdueTask(t) || t.isRunning)
     : kFilter === "yesterday" ? allTasks.filter((t) => t.plannedDate === yesterday || t.dueDate === yesterday)
     : kFilter === "tomorrow" ? allTasks.filter((t) => t.plannedDate === tomorrow || t.dueDate === tomorrow)
-    : kFilter === "week" ? allTasks.filter((t) => t.recurring || hasDateIn(t, getDateStr(weekStart), weekEnd) || t.isRunning)
+    : kFilter === "week" ? allTasks.filter((t) => t.recurring || hasDateIn(t, getDateStr(weekStart), weekEnd) || isOverdueTask(t) || t.isRunning)
     : kFilter === "due" ? allTasks.filter((t) => t.dueDate)
     : kFilter === "planned" ? allTasks.filter((t) => t.plannedDate)
     : allTasks;
