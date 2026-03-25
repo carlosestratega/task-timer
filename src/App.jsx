@@ -789,7 +789,8 @@ function DraggableCard({ id, children }) {
 
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk, focusPanel, addToFocus, removeFromFocus, onStopTimer }) {
   const [kFilter, setKFilter] = useState("today");
-  const [kSort, setKSort] = useState("due"); // due | planned | category
+  const [kSort, setKSort] = useState("due");
+  const [hideOverdue, setHideOverdue] = useState(false);
   const allTasks = categories.flatMap((c) => c.tasks.filter((t) => {
     if (t.permanent && !t.recurring) return false; // permanent non-recurring excluded
     if (t.recurring && t.recurring.length > 0) {
@@ -821,6 +822,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
     : kFilter === "due" ? allTasks.filter((t) => t.dueDate)
     : kFilter === "planned" ? allTasks.filter((t) => t.plannedDate)
     : allTasks;
+  const finalFiltered = hideOverdue ? filtered.filter((t) => !isOverdueTask(t)) : filtered;
 
   const cols = [
     { key: "todo", label: "Por hacer", color: theme.textSec, emoji: "📋" },
@@ -842,7 +844,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
   };
 
   const grouped = { todo: [], doing: [], validating: [], done: [] };
-  filtered.forEach((t) => { const s = getStatus(t); if (grouped[s]) grouped[s].push(t); else grouped.todo.push(t); });
+  finalFiltered.forEach((t) => { const s = getStatus(t); if (grouped[s]) grouped[s].push(t); else grouped.todo.push(t); });
   const sortTasks = (tasks) => [...tasks].sort((a, b) => {
     if (kSort === "planned") return (a.plannedDate || a.dueDate || "9999").localeCompare(b.plannedDate || b.dueDate || "9999");
     if (kSort === "category") return a.catName.localeCompare(b.catName) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
@@ -889,7 +891,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
         {[{ key: "yesterday", label: "Ayer" }, { key: "today", label: "Hoy" }, { key: "tomorrow", label: "Mañana" }, { key: "week", label: "Semana" }, { key: "all", label: "Todas" }].map((f) => (
           <button key={f.key} onClick={() => setKFilter(f.key)} style={{ padding: "5px 12px", borderRadius: 20, border: kFilter === f.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kFilter === f.key ? theme.accent : "transparent", color: kFilter === f.key ? (dk ? "#000" : "#fff") : theme.textSec, fontSize: 12, fontWeight: kFilter === f.key ? 600 : 400, cursor: "pointer" }}>{f.label}</button>
         ))}
-        <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{filtered.length}</span>
+        <span style={{ fontSize: 11, color: theme.textSec, display: "flex", alignItems: "center", marginLeft: "auto" }}>{finalFiltered.length}</span>
+        <button onClick={() => setHideOverdue(!hideOverdue)} style={{ padding: "5px 10px", borderRadius: 20, border: hideOverdue ? "none" : `1px solid ${theme.border}`, backgroundColor: hideOverdue ? "#ef4444" : "transparent", color: hideOverdue ? "#fff" : theme.textSec, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>{hideOverdue ? "🔴 Ocultas" : "🔴 Vencidas"}</button>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, alignItems: "center" }}>
         <span style={{ fontSize: 11, color: theme.textSec }}>Ordenar:</span>
