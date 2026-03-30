@@ -2382,144 +2382,206 @@ export default function App() {
     setModal(null);
     const todayStr = getDateStr();
     const allT = categories.flatMap((c) => c.tasks.map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
-    const totalAll = allT.reduce((s, t) => s + t.totalSeconds, 0);
-    const totalSessions = allT.reduce((s, t) => s + (t.sessions || []).length, 0);
 
-    // Period filter
-    const isYesterday = (s) => { const y = new Date(); y.setDate(y.getDate() - 1); return getDateStr(parseSessionDate(s)) === getDateStr(y); };
-    const isLastWeek = (s) => { const d = parseSessionDate(s); const now = new Date(); const ws = getWeekStart(); const lwEnd = new Date(ws); lwEnd.setDate(lwEnd.getDate() - 1); const lwStart = new Date(lwEnd); lwStart.setDate(lwStart.getDate() - 6); return d >= lwStart && d <= lwEnd; };
-    const isLastMonth = (s) => { const d = parseSessionDate(s); const now = new Date(); const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0); const lmStart = new Date(lmEnd.getFullYear(), lmEnd.getMonth(), 1); return d >= lmStart && d <= lmEnd; };
-
-    const periodLabels = { today: "Hoy", yesterday: "Ayer", lastweek: "Semana pasada", lastmonth: "Mes pasado", all: "Todo" };
-    const periodFilter = reportPeriod === "today" ? isToday : reportPeriod === "yesterday" ? isYesterday : reportPeriod === "lastweek" ? isLastWeek : reportPeriod === "lastmonth" ? isLastMonth : () => true;
-    const periodLabel = periodLabels[reportPeriod] || "Todo";
-
-    const periodReport = (label, filterFn) => {
-      const lines = [];
-      const catData = categories.map((c) => {
-        const tasks = c.tasks.map((t) => {
-          const et = ensureTask(t);
-          const fs = (et.sessions || []).filter(filterFn);
-          const pTime = fs.reduce((s, x) => s + x.duration, 0);
-          const moods = fs.filter((s) => s.mood);
-          const avgMood = moods.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moods.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moods.length)] : "-";
-          const tags = [...new Set(fs.flatMap((s) => s.tags || []))];
-          return { name: et.name, pTime, sessions: fs.length, avgMood, tags, completed: et.completed, permanent: et.permanent, recurring: !!et.recurring, plannedDate: et.plannedDate, dueDate: et.dueDate, subtasks: et.subtasks || [], goalDaily: et.goalDaily, emoji: et.emoji };
-        }).filter((t) => t.pTime > 0).sort((a, b) => b.pTime - a.pTime);
-        const catTime = tasks.reduce((s, t) => s + t.pTime, 0);
-        return { name: c.name, catTime, tasks };
-      }).filter((c) => c.catTime > 0).sort((a, b) => b.catTime - a.catTime);
-
-      const totalP = catData.reduce((s, c) => s + c.catTime, 0);
-      lines.push(`\n## ${label}`);
-      lines.push(`Tiempo total: ${fmtLong(totalP)} | Sesiones: ${catData.reduce((s, c) => s + c.tasks.reduce((s2, t) => s2 + t.sessions, 0), 0)}`);
-      lines.push("");
-      catData.forEach((c) => {
-        const pct = totalP > 0 ? Math.round((c.catTime / totalP) * 100) : 0;
-        lines.push(`### ${c.name} — ${fmtLong(c.catTime)} (${pct}%)`);
-        c.tasks.forEach((t) => {
-          const tPct = c.catTime > 0 ? Math.round((t.pTime / c.catTime) * 100) : 0;
-          const flags = [t.completed ? "✓" : "", t.permanent ? "♾️" : "", t.recurring ? "🔁" : ""].filter(Boolean).join(" ");
-          const dates = [t.plannedDate ? `📅${t.plannedDate}` : "", t.dueDate ? `⚠️${t.dueDate}` : ""].filter(Boolean).join(" ");
-          const subs = t.subtasks.length > 0 ? `${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} sub` : "";
-          lines.push(`- ${t.emoji || ""}${t.name}: ${fmtLong(t.pTime)} (${tPct}%) | ${t.sessions} ses. | ánimo: ${t.avgMood} ${flags} ${dates} ${subs}`.trim());
-          if (t.tags.length > 0) lines.push(`  Tags: ${t.tags.join(", ")}`);
-        });
-        lines.push("");
-      });
-      return lines.join("\n");
+    // Calculate date range for the period
+    const getRange = () => {
+      const now = new Date();
+      if (reportPeriod === "today") {
+        return { start: todayStr, end: todayStr, label: "Hoy" };
+      }
+      if (reportPeriod === "yesterday") {
+        const y = new Date(now); y.setDate(y.getDate() - 1);
+        const ys = getDateStr(y);
+        return { start: ys, end: ys, label: "Ayer" };
+      }
+      if (reportPeriod === "lastweek") {
+        const ws = getWeekStart();
+        const lwEnd = new Date(ws); lwEnd.setDate(lwEnd.getDate() - 1);
+        const lwStart = new Date(lwEnd); lwStart.setDate(lwStart.getDate() - 6);
+        return { start: getDateStr(lwStart), end: getDateStr(lwEnd), label: "Semana pasada" };
+      }
+      if (reportPeriod === "lastmonth") {
+        const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        const lmStart = new Date(lmEnd.getFullYear(), lmEnd.getMonth(), 1);
+        return { start: getDateStr(lmStart), end: getDateStr(lmEnd), label: "Mes pasado" };
+      }
+      return { start: "2000-01-01", end: todayStr, label: "Todo" };
+    };
+    const range = getRange();
+    const inRange = (s) => {
+      const ds = getDateStr(parseSessionDate(s));
+      return ds >= range.start && ds <= range.end;
     };
 
-    // Daily breakdown for the period
-    const dailyDays = reportPeriod === "today" ? 1 : reportPeriod === "yesterday" ? 1 : reportPeriod === "lastweek" ? 7 : reportPeriod === "lastmonth" ? new Date(new Date().getFullYear(), new Date().getMonth(), 0).getDate() : 14;
+    // Get all dates in range
+    const getDaysInRange = () => {
+      const days = [];
+      const d = new Date(range.start + "T12:00:00");
+      const end = new Date(range.end + "T12:00:00");
+      while (d <= end) {
+        days.push(getDateStr(d));
+        d.setDate(d.getDate() + 1);
+      }
+      return days;
+    };
+
+    // Period stats
+    const periodSessions = allT.flatMap((t) => (t.sessions || []).filter(inRange).map((s) => ({ ...s, taskName: t.name, catName: t.catName, emoji: t.emoji })));
+    const periodTime = periodSessions.reduce((a, s) => a + s.duration, 0);
+    const periodDays = getDaysInRange();
+    const daysWithActivity = new Set(periodSessions.map((s) => getDateStr(parseSessionDate(s)))).size;
+
+    // Category breakdown
+    const catData = categories.map((c) => {
+      const tasks = c.tasks.map((t) => {
+        const et = ensureTask(t);
+        const fs = (et.sessions || []).filter(inRange);
+        const pTime = fs.reduce((s, x) => s + x.duration, 0);
+        const moods = fs.filter((s) => s.mood);
+        const avgMood = moods.length > 0 ? ["😫", "😕", "😐", "🙂", "🔥"][Math.round(moods.reduce((a, s) => a + ["😫", "😕", "😐", "🙂", "🔥"].indexOf(s.mood), 0) / moods.length)] : "-";
+        const tags = [...new Set(fs.flatMap((s) => s.tags || []))];
+        const pri = getPriority(et.priority);
+        const wei = getWeight(et.weight);
+        return { name: et.name, pTime, sessions: fs.length, avgMood, tags, completed: et.completed, permanent: et.permanent, recurring: !!et.recurring, plannedDate: et.plannedDate, dueDate: et.dueDate, subtasks: et.subtasks || [], goalDaily: et.goalDaily, emoji: et.emoji, priority: pri ? pri.emoji + " " + pri.label : null, weight: et.weight };
+      }).filter((t) => t.pTime > 0).sort((a, b) => b.pTime - a.pTime);
+      const catTime = tasks.reduce((s, t) => s + t.pTime, 0);
+      return { name: c.name, catTime, tasks };
+    }).filter((c) => c.catTime > 0).sort((a, b) => b.catTime - a.catTime);
+
+    // Build category breakdown text
+    const breakdownLines = [`\n## Desglose: ${range.label} (${range.start}${range.start !== range.end ? " → " + range.end : ""})`];
+    breakdownLines.push(`Tiempo: ${fmtLong(periodTime)} | Sesiones: ${periodSessions.length} | Días activos: ${daysWithActivity}/${periodDays.length}`);
+    if (daysWithActivity > 0) breakdownLines.push(`Media diaria: ${fmtLong(Math.round(periodTime / daysWithActivity))}`);
+    breakdownLines.push("");
+    catData.forEach((c) => {
+      const pct = periodTime > 0 ? Math.round((c.catTime / periodTime) * 100) : 0;
+      breakdownLines.push(`### ${c.name} — ${fmtLong(c.catTime)} (${pct}%)`);
+      c.tasks.forEach((t) => {
+        const tPct = c.catTime > 0 ? Math.round((t.pTime / c.catTime) * 100) : 0;
+        const flags = [t.completed ? "✓" : "", t.permanent ? "♾️" : "", t.recurring ? "🔁" : ""].filter(Boolean).join(" ");
+        const dates = [t.plannedDate ? `📅 ${t.plannedDate}` : "", t.dueDate ? `⚠️ ${t.dueDate}` : ""].filter(Boolean).join(" ");
+        const priWei = [t.priority, t.weight ? `Peso: ${t.weight}` : ""].filter(Boolean).join(" | ");
+        const subs = t.subtasks.length > 0 ? `${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} sub` : "";
+        breakdownLines.push(`- ${t.emoji || ""}${t.name}: ${fmtLong(t.pTime)} (${tPct}%) | ${t.sessions} ses. | ánimo: ${t.avgMood} ${flags} ${dates} ${subs} ${priWei}`.replace(/\s+/g, " ").trim());
+        if (t.tags.length > 0) breakdownLines.push(`  Tags: ${t.tags.join(", ")}`);
+      });
+      breakdownLines.push("");
+    });
+    if (catData.length === 0) breakdownLines.push("Sin actividad en este periodo.\n");
+
+    // Daily breakdown
     const dailyLines = [`\n## Actividad diaria`];
-    const dayStart = reportPeriod === "yesterday" ? 1 : reportPeriod === "lastweek" ? (() => { const ws = getWeekStart(); return Math.ceil((new Date() - new Date(ws)) / 864e5) + 6; })() : reportPeriod === "lastmonth" ? (() => { const d = new Date(); return d.getDate() + new Date(d.getFullYear(), d.getMonth(), 0).getDate() - 1; })() : reportPeriod === "today" ? 0 : 13;
-    for (let i = dayStart; i >= dayStart - dailyDays + 1; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      const ds = getDateStr(d);
+    periodDays.forEach((ds) => {
+      const d = new Date(ds + "T12:00:00");
       const dayName = d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
       let tot = 0, sess = 0;
       allT.forEach((t) => (t.sessions || []).forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) { tot += s.duration; sess++; } }));
       if (tot > 0) dailyLines.push(`- ${dayName}: ${fmtLong(tot)} (${sess} sesiones)`);
       else dailyLines.push(`- ${dayName}: sin actividad`);
+    });
+    if (periodDays.length > 1) {
+      dailyLines.push(`\nTotal: ${fmtLong(periodTime)} | ${periodSessions.length} sesiones | ${daysWithActivity} días activos`);
     }
 
-    // Habits
-    const habitLines = ["\n## Hábitos (mes actual)"];
-    const hMonth = new Date().getMonth(), hYear = new Date().getFullYear();
-    const hDays = new Date(hYear, hMonth + 1, 0).getDate();
-    const recTasks = allT.filter((t) => t.recurring && t.recurring.length > 0);
-    recTasks.forEach((t) => {
-      const hist = t.recurringHistory || {};
-      let total = 0, done = 0;
-      for (let d = 1; d <= hDays; d++) {
-        if ((t.recurring || []).includes(new Date(hYear, hMonth, d).getDay())) {
-          total++;
-          const ds = `${hYear}-${String(hMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-          if (hist[ds]) done++;
+    // Cronología (for single-day or short periods)
+    const timelineLines = [];
+    const timelineDays = periodDays.length <= 7 ? periodDays : [periodDays[periodDays.length - 1]];
+    timelineDays.forEach((targetDate) => {
+      const daySessions = [];
+      allT.forEach((t) => (t.sessions || []).forEach((s) => {
+        if (getDateStr(parseSessionDate(s)) === targetDate) {
+          daySessions.push({ taskName: t.name, emoji: t.emoji, catName: t.catName, duration: s.duration, startedAt: s.startedAt, endedAt: s.endedAt, mood: s.mood, tags: s.tags || [], dateISO: s.dateISO });
         }
+      }));
+      daySessions.sort((a, b) => (a.dateISO ? new Date(a.dateISO).getTime() : 0) - (b.dateISO ? new Date(b.dateISO).getTime() : 0));
+      if (daySessions.length > 0) {
+        const d = new Date(targetDate + "T12:00:00");
+        const dayLabel = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+        timelineLines.push(`\n## Cronología: ${dayLabel}`);
+        daySessions.forEach((s, i) => {
+          const time = `${s.startedAt || "?"} → ${s.endedAt || "?"}`;
+          const mood = s.mood ? ` ${s.mood}` : "";
+          const tags = s.tags.length > 0 ? ` [${s.tags.join(", ")}]` : "";
+          timelineLines.push(`${i + 1}. ${time} | ${s.emoji || ""}${s.taskName} (${s.catName}) | ${fmtShort(s.duration)}${mood}${tags}`);
+        });
+        timelineLines.push(`Total: ${fmtLong(daySessions.reduce((a, s) => a + s.duration, 0))} · ${daySessions.length} sesiones`);
       }
-      habitLines.push(`- ${t.emoji || ""}${t.name}: ${done}/${total} (${total > 0 ? Math.round((done / total) * 100) : 0}%) | Días: ${["D", "L", "M", "X", "J", "V", "S"].filter((_, i) => (t.recurring || []).includes(i)).join(",")}`);
     });
-    if (recTasks.length === 0) habitLines.push("Sin hábitos configurados");
+    if (timelineLines.length === 0) timelineLines.push("\n## Cronología\nSin sesiones registradas en este periodo.");
 
-    // Tasks overview
+    // Hábitos
+    const habitLines = [];
+    const recTasks = allT.filter((t) => t.recurring && t.recurring.length > 0);
+    if (recTasks.length > 0) {
+      // Use the month of the period start
+      const refDate = new Date(range.start + "T12:00:00");
+      const hMonth = refDate.getMonth(), hYear = refDate.getFullYear();
+      const hDays = new Date(hYear, hMonth + 1, 0).getDate();
+      const monthName = new Date(hYear, hMonth).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+      habitLines.push(`\n## Hábitos (${monthName})`);
+      recTasks.forEach((t) => {
+        const hist = t.recurringHistory || {};
+        let total = 0, done = 0;
+        for (let d = 1; d <= hDays; d++) {
+          if ((t.recurring || []).includes(new Date(hYear, hMonth, d).getDay())) {
+            total++;
+            const ds = `${hYear}-${String(hMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+            if (hist[ds]) done++;
+          }
+        }
+        habitLines.push(`- ${t.emoji || ""}${t.name}: ${done}/${total} (${total > 0 ? Math.round((done / total) * 100) : 0}%) | Días: ${["D", "L", "M", "X", "J", "V", "S"].filter((_, i) => (t.recurring || []).includes(i)).join(",")} | Tiempo total: ${fmtLong(t.totalSeconds)}`);
+      });
+    } else {
+      habitLines.push("\n## Hábitos\nSin hábitos configurados.");
+    }
+
+    // Resumen de tareas
     const overviewLines = ["\n## Todas las tareas"];
     categories.forEach((c) => {
-      overviewLines.push(`\n### ${c.name} (${c.tasks.length} tareas)`);
+      const active = c.tasks.filter((t) => !t.completed);
+      const completed = c.tasks.filter((t) => t.completed);
+      overviewLines.push(`\n### ${c.name} (${active.length} activas, ${completed.length} completadas)`);
       c.tasks.forEach((t) => {
         const et = ensureTask(t);
-        const flags = [et.completed ? "✓ completada" : "", et.permanent ? "♾️ permanente" : "", et.recurring ? "🔁 recurrente" : ""].filter(Boolean).join(", ");
-        const dates = [et.plannedDate ? `📅${et.plannedDate}` : "", et.dueDate ? `⚠️${et.dueDate}` : ""].filter(Boolean).join(" ");
-        overviewLines.push(`- ${et.emoji || ""}${et.name} | ${fmtLong(et.totalSeconds)} | ${(et.sessions || []).length} ses. ${flags} ${dates}`.trim());
+        const flags = [et.completed ? "✓" : "", et.permanent ? "♾️" : "", et.recurring ? "🔁" : ""].filter(Boolean).join(" ");
+        const dates = [et.plannedDate ? `📅 ${et.plannedDate}` : "", et.dueDate ? `⚠️ ${et.dueDate}` : ""].filter(Boolean).join(" ");
+        const pri = getPriority(et.priority); const wei = et.weight;
+        const priWei = [pri ? pri.emoji + " " + pri.label : "", wei ? `Peso: ${wei}` : ""].filter(Boolean).join(" | ");
+        overviewLines.push(`- ${et.emoji || ""}${et.name} | ${fmtLong(et.totalSeconds)} | ${(et.sessions || []).length} ses. ${flags} ${dates} ${priWei}`.replace(/\s+/g, " ").trim());
         (et.subtasks || []).forEach((st) => overviewLines.push(`  ${st.done ? "✓" : "·"} ${st.name}`));
       });
     });
 
-    // Streak
+    // Racha
     let streak = 0; const sd = new Date();
     for (let i = 0; i < 365; i++) { const ds = getDateStr(sd); let dt = 0; allT.forEach((t) => (t.sessions || []).forEach((s) => { if (getDateStr(parseSessionDate(s)) === ds) dt += s.duration; })); if (dt > 0) streak++; else if (i > 0) break; sd.setDate(sd.getDate() - 1); }
 
-    // Timeline
-    const timelineLines = ["\n## Cronología del día"];
-    const targetDate = reportPeriod === "yesterday" ? (() => { const d = new Date(); d.setDate(d.getDate() - 1); return getDateStr(d); })() : getDateStr();
-    const daySessions = [];
-    allT.forEach((t) => (t.sessions || []).forEach((s) => {
-      if (getDateStr(parseSessionDate(s)) === targetDate) {
-        daySessions.push({ taskName: t.name, emoji: t.emoji, catName: t.catName, duration: s.duration, startedAt: s.startedAt, endedAt: s.endedAt, mood: s.mood, tags: s.tags || [], dateISO: s.dateISO });
-      }
-    }));
-    daySessions.sort((a, b) => (a.dateISO ? new Date(a.dateISO).getTime() : 0) - (b.dateISO ? new Date(b.dateISO).getTime() : 0));
-    if (daySessions.length === 0) { timelineLines.push("Sin sesiones registradas"); }
-    else {
-      daySessions.forEach((s, i) => {
-        const time = `${s.startedAt || "?"} → ${s.endedAt || "?"}`;
-        const mood = s.mood ? ` ${s.mood}` : "";
-        const tags = s.tags.length > 0 ? ` [${s.tags.join(", ")}]` : "";
-        timelineLines.push(`${i + 1}. ${time} | ${s.emoji || ""}${s.taskName} (${s.catName}) | ${fmtShort(s.duration)}${mood}${tags}`);
-      });
-      timelineLines.push(`\nTotal día: ${fmtLong(daySessions.reduce((a, s) => a + s.duration, 0))} · ${daySessions.length} sesiones`);
-    }
+    const totalAll = allT.reduce((s, t) => s + t.totalSeconds, 0);
+    const totalSessions = allT.reduce((s, t) => s + (t.sessions || []).length, 0);
 
     const md = [
-      `# Informe de productividad — ${periodLabel} (${todayStr})`,
+      `# Informe de productividad — ${range.label}`,
+      `Periodo: ${range.start}${range.start !== range.end ? " → " + range.end : ""} | Generado: ${new Date().toLocaleString("es-ES")}`,
       ``,
-      `## Resumen general`,
-      `- Tiempo total registrado: ${fmtLong(totalAll)}`,
-      `- Sesiones totales: ${totalSessions}`,
-      `- Categorías: ${categories.length}`,
-      `- Tareas activas: ${allT.filter((t) => !t.completed).length}`,
-      `- Tareas completadas: ${allT.filter((t) => t.completed).length}`,
-      `- Tareas permanentes: ${allT.filter((t) => t.permanent).length}`,
-      `- Hábitos: ${recTasks.length}`,
+      `## Resumen global`,
+      `- Tiempo total histórico: ${fmtLong(totalAll)}`,
+      `- Sesiones totales históricas: ${totalSessions}`,
+      `- Categorías: ${categories.length} | Tareas activas: ${allT.filter((t) => !t.completed).length} | Completadas: ${allT.filter((t) => t.completed).length}`,
+      `- Permanentes: ${allT.filter((t) => t.permanent).length} | Hábitos: ${recTasks.length}`,
       `- Racha actual: ${streak} días`,
-      periodReport(`Desglose: ${periodLabel}`, periodFilter),
-      timelineLines.join("\n"),
+      ``,
+      `## Resumen del periodo: ${range.label}`,
+      `- Tiempo: ${fmtLong(periodTime)}`,
+      `- Sesiones: ${periodSessions.length}`,
+      `- Días: ${periodDays.length} (${daysWithActivity} con actividad)`,
+      daysWithActivity > 0 ? `- Media diaria: ${fmtLong(Math.round(periodTime / daysWithActivity))}` : "",
+      breakdownLines.join("\n"),
       dailyLines.join("\n"),
+      timelineLines.join("\n"),
       habitLines.join("\n"),
       overviewLines.join("\n"),
-      `\n---\nGenerado: ${new Date().toLocaleString("es-ES")} | Periodo: ${periodLabel}`
-    ].join("\n");
+      `\n---\nGenerado: ${new Date().toLocaleString("es-ES")} | Periodo: ${range.label} (${range.start} → ${range.end})`
+    ].filter(Boolean).join("\n");
 
     const b = new Blob([md], { type: "text/markdown" });
     const u = URL.createObjectURL(b);
