@@ -2386,25 +2386,12 @@ export default function App() {
     // Calculate date range for the period
     const getRange = () => {
       const now = new Date();
-      if (reportPeriod === "today") {
-        return { start: todayStr, end: todayStr, label: "Hoy" };
-      }
-      if (reportPeriod === "yesterday") {
-        const y = new Date(now); y.setDate(y.getDate() - 1);
-        const ys = getDateStr(y);
-        return { start: ys, end: ys, label: "Ayer" };
-      }
-      if (reportPeriod === "lastweek") {
-        const ws = getWeekStart();
-        const lwEnd = new Date(ws); lwEnd.setDate(lwEnd.getDate() - 1);
-        const lwStart = new Date(lwEnd); lwStart.setDate(lwStart.getDate() - 6);
-        return { start: getDateStr(lwStart), end: getDateStr(lwEnd), label: "Semana pasada" };
-      }
-      if (reportPeriod === "lastmonth") {
-        const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-        const lmStart = new Date(lmEnd.getFullYear(), lmEnd.getMonth(), 1);
-        return { start: getDateStr(lmStart), end: getDateStr(lmEnd), label: "Mes pasado" };
-      }
+      const daysAgo = (n) => { const d = new Date(now); d.setDate(d.getDate() - n); return getDateStr(d); };
+      if (reportPeriod === "today") return { start: todayStr, end: todayStr, label: "Hoy" };
+      if (reportPeriod === "yesterday") return { start: daysAgo(1), end: daysAgo(1), label: "Ayer" };
+      if (reportPeriod === "week") return { start: daysAgo(6), end: todayStr, label: "Última semana" };
+      if (reportPeriod === "15days") return { start: daysAgo(14), end: todayStr, label: "Últimos 15 días" };
+      if (reportPeriod === "month") return { start: daysAgo(29), end: todayStr, label: "Último mes" };
       return { start: "2000-01-01", end: todayStr, label: "Todo" };
     };
     const range = getRange();
@@ -2927,8 +2914,9 @@ export default function App() {
               { onClick: () => setModal({ title: "Generar informe", options: [
                 { label: "Hoy", onSelect: () => generateReport("today") },
                 { label: "Ayer", onSelect: () => generateReport("yesterday") },
-                { label: "Semana pasada", onSelect: () => generateReport("lastweek") },
-                { label: "Mes pasado", onSelect: () => generateReport("lastmonth") },
+                { label: "Última semana", onSelect: () => generateReport("week") },
+                { label: "Últimos 15 días", onSelect: () => generateReport("15days") },
+                { label: "Último mes", onSelect: () => generateReport("month") },
                 { label: "Todo", onSelect: () => generateReport("all") },
               ] }), icon: I.dl, label: "Informe" },
             ].map((b, i) => (
