@@ -988,7 +988,7 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
 
   const isCurrentMonth = month === today.getMonth() && year === today.getFullYear();
   const todayDay = today.getDate();
-  const startDay = (!showFullMonth && isCurrentMonth) ? todayDay : 1;
+  const startDay = (!showFullMonth && isCurrentMonth) ? Math.max(1, todayDay - 1) : 1;
 
   // Stats per task
   const taskStats = finalTasks.map((t) => {
@@ -1019,13 +1019,13 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
       )}
       {recurringTasks.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>No hay hábitos. Edita una tarea y activa "Repetir" para verla aquí.</div>}
       {recurringTasks.length > 0 && (<>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)", WebkitOverflowScrolling: "touch" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: finalTasks.length * 44 + 130 }}>
-            <thead>
+            <thead style={{ position: "sticky", top: 0, zIndex: 3 }}>
               <tr>
-                <th style={{ position: "sticky", left: 0, backgroundColor: theme.bg, zIndex: 2, padding: "6px 8px", textAlign: "left", fontSize: 12, color: theme.textSec, fontWeight: 500, borderBottom: `1px solid ${theme.border}`, minWidth: 120 }}>Día</th>
+                <th style={{ position: "sticky", left: 0, top: 0, backgroundColor: theme.bg, zIndex: 4, padding: "6px 8px", textAlign: "left", fontSize: 12, color: theme.textSec, fontWeight: 500, borderBottom: `1px solid ${theme.border}`, minWidth: 120 }}>Día</th>
                 {taskStats.map((t, ti) => (
-                  <th key={t.id} style={{ padding: "4px 2px", textAlign: "center", borderBottom: `1px solid ${theme.border}`, minWidth: 44 }}>
+                  <th key={t.id} style={{ padding: "4px 2px", textAlign: "center", borderBottom: `1px solid ${theme.border}`, minWidth: 44, backgroundColor: theme.bg }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 0, marginBottom: 2 }}>
                       <button onClick={() => moveCol(t.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, opacity: ti === 0 ? 0.15 : 0.5 }}>◀</button>
                       <button onClick={() => moveCol(t.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, opacity: ti === taskStats.length - 1 ? 0.15 : 0.5 }}>▶</button>
