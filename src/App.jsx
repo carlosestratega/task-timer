@@ -790,64 +790,127 @@ function DraggableCard({ id, children }) {
 function RoutineView({ routine, onSave, theme, dk }) {
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const [name, setName] = useState("");
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("10:00");
   const [color, setColor] = useState("#6366f1");
+  const [emoji, setEmoji] = useState("");
+  const [subs, setSubs] = useState([]);
+  const [subInput, setSubInput] = useState("");
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
   const blocks = (routine || []).sort((a, b) => a.start.localeCompare(b.start));
 
   const timeToMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  const minToTime = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   const startHour = blocks.length > 0 ? Math.min(Math.floor(timeToMin(blocks[0].start) / 60), 7) : 7;
   const endHour = blocks.length > 0 ? Math.max(Math.ceil(timeToMin(blocks[blocks.length - 1].end) / 60), 23) : 23;
   const totalMin = (endHour - startHour) * 60;
   const PX_PER_MIN = 1.8;
 
-  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color }; onSave([...(routine || []), b]); setName(""); setAdding(false); };
-  const deleteBlock = (id) => onSave((routine || []).filter((b) => b.id !== id));
-  const startEdit = (b) => { setEditId(b.id); setName(b.name); setStart(b.start); setEnd(b.end); setColor(b.color); };
-  const saveEdit = () => { onSave((routine || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color } : b)); setEditId(null); setName(""); };
-  const cancelEdit = () => { setEditId(null); setAdding(false); setName(""); };
+  const addSub = () => { if (!subInput.trim()) return; setSubs([...subs, { id: `rs-${Date.now()}`, text: subInput.trim() }]); setSubInput(""); };
+  const removeSub = (id) => setSubs(subs.filter((s) => s.id !== id));
 
-  // Current time marker
+  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined }; onSave([...(routine || []), b]); resetForm(); };
+  const deleteBlock = (id) => onSave((routine || []).filter((b) => b.id !== id));
+  const startEdit = (b) => { setEditId(b.id); setName(b.name); setStart(b.start); setEnd(b.end); setColor(b.color); setEmoji(b.emoji || ""); setSubs(b.subs || []); setAdding(false); };
+  const saveEdit = () => { onSave((routine || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined } : b)); resetForm(); };
+  const resetForm = () => { setEditId(null); setAdding(false); setName(""); setEmoji(""); setSubs([]); setSubInput(""); };
+
+  // Bulk paste: format "09:00-10:00 🏋️ Deporte\n- Calentamiento\n- Pesas"
+  const parsePaste = () => {
+    const lines = pasteText.trim().split("\n");
+    const newBlocks = [];
+    let current = null;
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (trimmed.startsWith("- ") && current) {
+        if (!current.subs) current.subs = [];
+        current.subs.push({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, text: trimmed.slice(2) });
+        return;
+      }
+      const m = trimmed.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\s*(.*)/);
+      if (m) {
+        if (current) newBlocks.push(current);
+        const rest = m[3].trim();
+        const emojiMatch = rest.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*/u);
+        current = { id: `rb-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, start: m[1].padStart(5, "0"), end: m[2].padStart(5, "0"), name: emojiMatch ? rest.slice(emojiMatch[0].length) : rest, emoji: emojiMatch ? emojiMatch[1] : null, color: COLORS[newBlocks.length % COLORS.length] };
+      }
+    });
+    if (current) newBlocks.push(current);
+    if (newBlocks.length > 0) { onSave([...(routine || []), ...newBlocks]); setPasteText(""); setShowPaste(false); }
+  };
+
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const nowInRange = nowMin >= startHour * 60 && nowMin <= endHour * 60;
+
+  const blockForm = (
+    <div style={{ padding: 14, marginBottom: 16, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="😀" maxLength={4} style={{ width: 50, padding: "10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 20, outline: "none", textAlign: "center" }} />
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") editId ? saveEdit() : addBlock(); if (e.key === "Escape") resetForm(); }} placeholder="Nombre del bloque..." style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 3 }}>Inicio</div>
+          <input type="time" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 3 }}>Fin</div>
+          <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+        {COLORS.map((c) => (
+          <div key={c} onClick={() => setColor(c)} style={{ width: 26, height: 26, borderRadius: 6, backgroundColor: c, cursor: "pointer", border: color === c ? "3px solid " + theme.text : "2px solid transparent", opacity: color === c ? 1 : 0.5 }} />
+        ))}
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 4 }}>Notas / subtareas</div>
+        {subs.map((s) => (
+          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
+            <span style={{ fontSize: 13, flex: 1 }}>· {s.text}</span>
+            <button onClick={() => removeSub(s.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.x}</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+          <input value={subInput} onChange={(e) => setSubInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSub(); } }} placeholder="Añadir nota..." style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none" }} />
+          <button onClick={addSub} style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, cursor: "pointer", fontSize: 13 }}>+</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.text, fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+        <button onClick={editId ? saveEdit : addBlock} style={{ padding: "8px 16px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: name.trim() ? 1 : 0.5 }}>{editId ? "Guardar" : "Crear"}</button>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ padding: "12px 0 100px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Mi rutina diaria</h2>
-        <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor("#6366f1"); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Pegar</button>
+          <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
+        </div>
       </div>
 
-      {(adding || editId) && (
-        <div style={{ padding: 14, marginBottom: 16, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") editId ? saveEdit() : addBlock(); if (e.key === "Escape") cancelEdit(); }} placeholder="Nombre del bloque..." style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", marginBottom: 10 }} />
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 3 }}>Inicio</div>
-              <input type="time" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 3 }}>Fin</div>
-              <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-            {COLORS.map((c) => (
-              <div key={c} onClick={() => setColor(c)} style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: c, cursor: "pointer", border: color === c ? "3px solid " + theme.text : "2px solid transparent", opacity: color === c ? 1 : 0.5 }} />
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button onClick={cancelEdit} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.text, fontSize: 14, cursor: "pointer" }}>Cancelar</button>
-            <button onClick={editId ? saveEdit : addBlock} style={{ padding: "8px 16px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: name.trim() ? 1 : 0.5 }}>{editId ? "Guardar" : "Crear"}</button>
+      {showPaste && (
+        <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 6 }}>Formato: <code>09:00-10:00 🏋️ Deporte</code> (una línea por bloque, subtareas con <code>- texto</code>)</div>
+          <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"09:00-10:00 🏋️ Deporte\n- Calentamiento\n- Pesas\n10:30-11:00 🧘 Meditación\n13:00-14:00 🍽️ Comida"} rows={6} style={{ width: "100%", padding: "10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "monospace" }} />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+            <button onClick={() => setShowPaste(false)} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.text, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+            <button onClick={parsePaste} style={{ padding: "8px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Importar</button>
           </div>
         </div>
       )}
 
-      {blocks.length === 0 && !adding && (
+      {(adding || editId) && blockForm}
+
+      {blocks.length === 0 && !adding && !showPaste && (
         <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
           <div style={{ fontSize: 14 }}>Crea bloques horarios para estructurar tu día</div>
@@ -856,7 +919,6 @@ function RoutineView({ routine, onSave, theme, dk }) {
 
       {blocks.length > 0 && (
         <div style={{ position: "relative", marginLeft: 50 }}>
-          {/* Hour labels */}
           {Array.from({ length: endHour - startHour + 1 }, (_, i) => {
             const h = startHour + i;
             return (
@@ -865,13 +927,9 @@ function RoutineView({ routine, onSave, theme, dk }) {
               </div>
             );
           })}
-
-          {/* Grid lines */}
           {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
             <div key={i} style={{ position: "absolute", top: i * 60 * PX_PER_MIN, left: 0, right: 0, borderTop: `1px solid ${theme.border}`, opacity: 0.4 }} />
           ))}
-
-          {/* Current time */}
           {nowInRange && (
             <div style={{ position: "absolute", top: (nowMin - startHour * 60) * PX_PER_MIN, left: -8, right: 0, zIndex: 2 }}>
               <div style={{ display: "flex", alignItems: "center" }}>
@@ -880,31 +938,31 @@ function RoutineView({ routine, onSave, theme, dk }) {
               </div>
             </div>
           )}
-
-          {/* Blocks */}
           {blocks.map((b) => {
             const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
-            const height = Math.max((timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN, 20);
+            const height = Math.max((timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN, 28);
             const duration = timeToMin(b.end) - timeToMin(b.start);
+            const hasSubs = b.subs && b.subs.length > 0;
             return (
-              <div key={b.id} style={{ position: "absolute", top, left: 4, right: 4, height, borderRadius: 8, backgroundColor: b.color + "22", borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
+              <div key={b.id} style={{ position: "absolute", top, left: 4, right: 4, minHeight: height, borderRadius: 8, backgroundColor: b.color + "22", borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {b.emoji && <span style={{ fontSize: 14 }}>{b.emoji}</span>}
+                      <span style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name}</span>
+                    </div>
                     <div style={{ fontSize: 11, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
+                    {hasSubs && <div style={{ fontSize: 11, color: theme.textSec, marginTop: 2 }}>{b.subs.map((s) => s.text).join(" · ")}</div>}
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4, flexShrink: 0 }}>{I.x}</button>
                 </div>
               </div>
             );
           })}
-
-          {/* Spacer for total height */}
           <div style={{ height: totalMin * PX_PER_MIN }} />
         </div>
       )}
 
-      {/* Summary */}
       {blocks.length > 0 && (
         <div style={{ marginTop: 16, padding: "12px", borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
           <div style={{ fontSize: 12, color: theme.textSec }}>
@@ -1078,6 +1136,9 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [showFullMonth, setShowFullMonth] = useState(false);
+  const [editHabit, setEditHabit] = useState(null);
+  const [editEmoji, setEditEmoji] = useState("");
+  const [editDays, setEditDays] = useState([]);
   const recurringTasks = categories.flatMap((c) => c.tasks.filter((t) => t.recurring && t.recurring.length > 0).map((t) => ({ ...ensureTask(t), catColor: c.color, catId: c.id })));
 
   // Apply custom order
@@ -1159,8 +1220,10 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
                       <button onClick={() => moveCol(t.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, opacity: ti === 0 ? 0.15 : 0.5 }}>◀</button>
                       <button onClick={() => moveCol(t.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: "0 2px", fontSize: 10, opacity: ti === taskStats.length - 1 ? 0.15 : 0.5 }}>▶</button>
                     </div>
-                    <div style={{ fontSize: 18 }}>{t.emoji || t.name.charAt(0)}</div>
-                    <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 50 }}>{t.name}</div>
+                    <div onClick={() => { setEditHabit(editHabit === t.id ? null : t.id); setEditEmoji(t.emoji || ""); setEditDays([...(t.recurring || [])]); }} style={{ cursor: "pointer" }}>
+                      <div style={{ fontSize: 18 }}>{t.emoji || t.name.charAt(0)}</div>
+                      <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 50 }}>{t.name}</div>
+                    </div>
                   </th>
                 ))}
               </tr>
@@ -1211,6 +1274,35 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
             </tfoot>
           </table>
         </div>
+        {editHabit && (() => {
+          const ht = recurringTasks.find((t) => t.id === editHabit);
+          if (!ht) return null;
+          return (
+            <div style={{ marginTop: 10, padding: 14, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} placeholder="😀" maxLength={4} style={{ width: 44, padding: "6px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 18, outline: "none", textAlign: "center" }} />
+                <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{ht.name}</span>
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 6 }}>Días</div>
+              <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                {["D", "L", "M", "X", "J", "V", "S"].map((d, i) => (
+                  <button key={i} onClick={() => setEditDays((p) => p.includes(i) ? p.filter((x) => x !== i) : [...p, i].sort())} style={{ width: 34, height: 34, borderRadius: 8, border: editDays.includes(i) ? "none" : `1px solid ${theme.border}`, backgroundColor: editDays.includes(i) ? "#6366f1" : "transparent", color: editDays.includes(i) ? "#fff" : theme.textSec, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{d}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                <button onClick={() => setEditDays([1,2,3,4,5])} style={{ fontSize: 11, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>L-V</button>
+                <button onClick={() => setEditDays([0,1,2,3,4,5,6])} style={{ fontSize: 11, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>Todos</button>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+                <button onClick={() => { onUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((tk) => tk.id === editHabit ? { ...tk, recurring: null, recurringHistory: {} } : tk) }))); setEditHabit(null); }} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 13, cursor: "pointer" }}>Quitar hábito</button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => setEditHabit(null)} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.text, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+                  <button onClick={() => { onUpdate((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((tk) => tk.id === editHabit ? { ...tk, emoji: editEmoji || null, recurring: editDays.length > 0 ? editDays : null } : tk) }))); setEditHabit(null); }} style={{ padding: "8px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {isCurrentMonth && !showFullMonth && startDay > 1 && (
           <button onClick={() => setShowFullMonth(true)} style={{ display: "block", width: "100%", padding: "10px", marginTop: 8, borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer", textAlign: "center" }}>▲ Ver mes completo (1 - {todayDay - 1})</button>
         )}
@@ -2802,9 +2894,24 @@ export default function App() {
                 {isActive ? I.pause : I.play}
               </button>
               <button onClick={() => writeNfc(timerView, t.name)} style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", padding: "6px 14px", fontSize: 12 }}>{I.nfc} NFC</button>
-              <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "center" }}>
-                <button onClick={() => update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, permanent: !tk.permanent } : tk) })))} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 10, border: `1px solid ${t.permanent ? "#8b5cf6" : theme.border}`, backgroundColor: t.permanent ? "#8b5cf622" : "transparent", color: t.permanent ? "#8b5cf6" : theme.textSec, cursor: "pointer", fontSize: 12 }}>♾️ {t.permanent ? "Permanente" : "No permanente"}</button>
-                <button onClick={() => { if (t.recurring && t.recurring.length > 0) { update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: null } : tk) }))); } else { update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: [1,2,3,4,5] } : tk) }))); } }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 10, border: `1px solid ${t.recurring ? "#6366f1" : theme.border}`, backgroundColor: t.recurring ? "#6366f122" : "transparent", color: t.recurring ? "#6366f1" : theme.textSec, cursor: "pointer", fontSize: 12 }}>🔁 {t.recurring ? "Hábito" : "No hábito"}</button>
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, permanent: !tk.permanent } : tk) })))} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 10, border: `1px solid ${t.permanent ? "#8b5cf6" : theme.border}`, backgroundColor: t.permanent ? "#8b5cf622" : "transparent", color: t.permanent ? "#8b5cf6" : theme.textSec, cursor: "pointer", fontSize: 12 }}>♾️ {t.permanent ? "Permanente" : "No permanente"}</button>
+                  <button onClick={() => { if (t.recurring && t.recurring.length > 0) { update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: null, recurringHistory: {} } : tk) }))); } else { update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: [1,2,3,4,5] } : tk) }))); } }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 10, border: `1px solid ${t.recurring ? "#6366f1" : theme.border}`, backgroundColor: t.recurring ? "#6366f122" : "transparent", color: t.recurring ? "#6366f1" : theme.textSec, cursor: "pointer", fontSize: 12 }}>🔁 {t.recurring ? "Hábito" : "No hábito"}</button>
+                </div>
+                {t.recurring && t.recurring.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {["D", "L", "M", "X", "J", "V", "S"].map((d, i) => (
+                        <button key={i} onClick={() => { const cur = t.recurring || []; const next = cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i].sort(); update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: next.length > 0 ? next : null } : tk) }))); }} style={{ width: 32, height: 32, borderRadius: 8, border: (t.recurring || []).includes(i) ? "none" : `1px solid ${theme.border}`, backgroundColor: (t.recurring || []).includes(i) ? "#6366f1" : "transparent", color: (t.recurring || []).includes(i) ? "#fff" : theme.textSec, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{d}</button>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: [1,2,3,4,5] } : tk) })))} style={{ fontSize: 11, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>L-V</button>
+                      <button onClick={() => update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: [0,1,2,3,4,5,6] } : tk) })))} style={{ fontSize: 11, color: theme.textSec, background: "none", border: `1px solid ${theme.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>Todos</button>
+                    </div>
+                  </div>
+                )}
               </div>
               {/* Focus panel */}
               {focusPanel.length > 0 && (
@@ -3110,7 +3217,7 @@ export default function App() {
         {/* Categories */}
         {/* View tabs */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border}` }}>
-          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }, { key: "routine", label: "Rutina" }, { key: "calendar", label: "📅" }].map((v) => (
+          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "routine", label: "Rutina" }, { key: "habits", label: "Hábitos" }, { key: "calendar", label: "📅" }].map((v) => (
             <button key={v.key} onClick={() => setMainView(v.key)} style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: mainView === v.key ? `2px solid ${theme.accent}` : "2px solid transparent", color: mainView === v.key ? theme.text : theme.textSec, fontSize: 14, fontWeight: mainView === v.key ? 600 : 400, cursor: "pointer" }}>{v.label}</button>
           ))}
         </div>
