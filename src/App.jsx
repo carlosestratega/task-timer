@@ -1310,7 +1310,7 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
                     </div>
                     <div onClick={() => { setEditHabit(editHabit === t.id ? null : t.id); setEditEmoji(t.emoji || ""); setEditDays([...(t.recurring || [])]); }} style={{ cursor: "pointer" }}>
                       <div style={{ fontSize: 18 }}>{t.emoji || t.name.charAt(0)}</div>
-                      <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 50 }}>{t.name}</div>
+                      <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", maxWidth: 56, margin: "0 auto", textAlign: "center", lineHeight: "12px", wordBreak: "break-word" }}>{t.name}</div>
                     </div>
                   </th>
                 ))}
