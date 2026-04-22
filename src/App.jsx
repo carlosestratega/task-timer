@@ -1175,7 +1175,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
           <button key={s.key} onClick={() => setKSort(s.key)} style={{ padding: "4px 10px", borderRadius: 14, border: kSort === s.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kSort === s.key ? theme.surface : "transparent", color: kSort === s.key ? theme.text : theme.textSec, fontSize: 11, fontWeight: kSort === s.key ? 600 : 400, cursor: "pointer" }}>{s.label}</button>
         ))}
       </div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="kanban-cols">
       {cols.map((col) => (
         <div key={col.key} className="kanban-col" style={{ marginBottom: 16, minWidth: 0 }}>
@@ -1206,6 +1206,11 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
                     {t.plannedDate && (() => { const dc = dateColor(t.plannedDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>📅 {fmtDDMM(t.plannedDate)}</span>; })()}
                     {t.dueDate && (() => { const dc = dateColor(t.dueDate, t.completed); return <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: dc ? dc + "22" : theme.surface, color: dc || theme.textSec }}>⚠️ {fmtDDMM(t.dueDate)}</span>; })()}
                   </div>
+                </div>
+                <div style={{ display: "flex", gap: 3, marginTop: 4, justifyContent: "flex-end" }}>
+                  {cols.filter((c) => c.key !== getStatus(t)).map((c) => (
+                    <button key={c.key} onClick={(e) => { e.stopPropagation(); setStatus(t.id, c.key); }} style={{ padding: "2px 6px", borderRadius: 4, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 9, cursor: "pointer", opacity: 0.6 }}>{c.emoji}</button>
+                  ))}
                 </div>
               </div>
             </DraggableCard>
