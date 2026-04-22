@@ -195,7 +195,7 @@ function useCloudSync(user) {
       const now = new Date().toISOString();
       lastSaveTs.current = new Date(now).getTime();
       const payload = { categories: clean, tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []), updatedAt: now, _device: DEVICE_ID };
-      if (extras) { if (extras.focusPanel !== undefined) payload.focusPanel = extras.focusPanel; if (extras.habitsOrder !== undefined) payload.habitsOrder = extras.habitsOrder; }
+      if (extras) { if (extras.focusPanel !== undefined) payload.focusPanel = extras.focusPanel; if (extras.habitsOrder !== undefined) payload.habitsOrder = extras.habitsOrder; if (extras.routine !== undefined) payload.routine = extras.routine; }
       await setDoc(doc(db, "users", user.uid), payload);
     } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
@@ -802,6 +802,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const [subInput, setSubInput] = useState("");
   const [showSubs, setShowSubs] = useState(true);
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
+  const toHex = (o) => { const v = Math.round((parseFloat(o) || 0.13) * 255); return Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"); };
   const blocks = (routine || []).sort((a, b) => a.start.localeCompare(b.start));
 
   const timeToMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
@@ -885,7 +886,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
       <div style={{ marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: theme.textSec, marginBottom: 4 }}>
           <span>Intensidad</span>
-          <div style={{ width: 24, height: 16, borderRadius: 4, backgroundColor: color + Math.round(opacity * 255).toString(16).padStart(2, "0") }} />
+          <div style={{ width: 24, height: 16, borderRadius: 4, backgroundColor: color + toHex(opacity) }} />
         </div>
         <input type="range" min="0.05" max="0.5" step="0.01" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color }} />
       </div>
@@ -914,7 +915,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Mi rutina diaria</h2>
         <div style={{ display: "flex", gap: 6 }}>
-          {blocks.length > 0 && <button onClick={() => { if (confirm("¿Borrar todos los bloques de rutina?")) onSave([]); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 12, cursor: "pointer" }}>🗑️</button>}
+          {blocks.length > 0 && <button onClick={() => onSave([])} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 12, cursor: "pointer" }}>🗑️</button>}
           <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 12, cursor: "pointer" }}>📝 {showSubs ? "Ocultar" : "Ver"}</button>
           <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Pegar</button>
           <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
@@ -1021,7 +1022,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
               const leftPct = col * widthPct;
               const opacity = b.opacity !== undefined ? b.opacity : 0.13;
               return (
-                <div key={b.id} style={{ position: "absolute", top, left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, minHeight: height, borderRadius: 8, backgroundColor: b.color + Math.round(opacity * 255).toString(16).padStart(2, "0"), borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
+                <div key={b.id} style={{ position: "absolute", top, left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, minHeight: height, borderRadius: 8, backgroundColor: b.color + toHex(opacity), borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
