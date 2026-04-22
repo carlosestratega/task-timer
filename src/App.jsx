@@ -797,6 +797,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const [end, setEnd] = useState("10:00");
   const [color, setColor] = useState("#6366f1");
   const [emoji, setEmoji] = useState("");
+  const [opacity, setOpacity] = useState(0.13);
   const [subs, setSubs] = useState([]);
   const [subInput, setSubInput] = useState("");
   const [showSubs, setShowSubs] = useState(true);
@@ -812,11 +813,11 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const addSub = () => { if (!subInput.trim()) return; setSubs([...subs, { id: `rs-${Date.now()}`, text: subInput.trim() }]); setSubInput(""); };
   const removeSub = (id) => setSubs(subs.filter((s) => s.id !== id));
 
-  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined }; onSave([...(routine || []), b]); resetForm(); };
+  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined, opacity }; onSave([...(routine || []), b]); resetForm(); };
   const deleteBlock = (id) => onSave((routine || []).filter((b) => b.id !== id));
-  const startEdit = (b) => { setEditId(b.id); setName(b.name); setStart(b.start); setEnd(b.end); setColor(b.color); setEmoji(b.emoji || ""); setSubs(b.subs || []); setAdding(false); };
-  const saveEdit = () => { onSave((routine || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined } : b)); resetForm(); };
-  const resetForm = () => { setEditId(null); setAdding(false); setName(""); setEmoji(""); setSubs([]); setSubInput(""); };
+  const startEdit = (b) => { setEditId(b.id); setName(b.name); setStart(b.start); setEnd(b.end); setColor(b.color); setEmoji(b.emoji || ""); setSubs(b.subs || []); setOpacity(b.opacity !== undefined ? b.opacity : 0.13); setAdding(false); };
+  const saveEdit = () => { onSave((routine || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined, opacity } : b)); resetForm(); };
+  const resetForm = () => { setEditId(null); setAdding(false); setName(""); setEmoji(""); setSubs([]); setSubInput(""); setOpacity(0.13); };
 
   // Bulk paste: format "09:00-10:00 🏋️ Deporte\n- Calentamiento\n- Pesas"
   const parsePaste = () => {
@@ -826,19 +827,19 @@ function RoutineView({ routine, onSave, theme, dk }) {
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
-      // Subtask: starts with -, –, —, ·, or •
-      if (/^[-–—·•]\s/.test(trimmed) && current) {
-        if (!current.subs) current.subs = [];
-        current.subs.push({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, text: trimmed.replace(/^[-–—·•]\s*/, "") });
-        return;
-      }
-      // Time range: 08:00-10:30 or 08:00–10:30
+      // Check time pattern first
       const m = trimmed.match(/^(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})\s*(.*)/);
       if (m) {
         if (current) newBlocks.push(current);
         const rest = m[3].trim();
         const emojiMatch = rest.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*/u);
-        current = { id: `rb-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, start: m[1].padStart(5, "0"), end: m[2].padStart(5, "0"), name: emojiMatch ? rest.slice(emojiMatch[0].length) : rest, emoji: emojiMatch ? emojiMatch[1] : null, color: COLORS[newBlocks.length % COLORS.length] };
+        current = { id: `rb-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, start: m[1].padStart(5, "0"), end: m[2].padStart(5, "0"), name: emojiMatch ? rest.slice(emojiMatch[0].length) : rest, emoji: emojiMatch ? emojiMatch[1] : null, color: COLORS[newBlocks.length % COLORS.length], opacity: 0.13 };
+        return;
+      }
+      // Subtask: starts with -, –, —, ·, •, or is indented
+      if (current && (/^[-–—·•]\s/.test(trimmed) || line.startsWith("  ") || line.startsWith("\t"))) {
+        if (!current.subs) current.subs = [];
+        current.subs.push({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, text: trimmed.replace(/^[-–—·•]\s*/, "") });
         return;
       }
       // Single time: 22:30 😴 Dormir (no end time → +30min)
@@ -882,6 +883,13 @@ function RoutineView({ routine, onSave, theme, dk }) {
         ))}
       </div>
       <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: theme.textSec, marginBottom: 4 }}>
+          <span>Intensidad</span>
+          <div style={{ width: 24, height: 16, borderRadius: 4, backgroundColor: color + Math.round(opacity * 255).toString(16).padStart(2, "0") }} />
+        </div>
+        <input type="range" min="0.05" max="0.5" step="0.01" value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color }} />
+      </div>
+      <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 4 }}>Notas / subtareas</div>
         {subs.map((s) => (
           <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
@@ -906,6 +914,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Mi rutina diaria</h2>
         <div style={{ display: "flex", gap: 6 }}>
+          {blocks.length > 0 && <button onClick={() => { if (confirm("¿Borrar todos los bloques de rutina?")) onSave([]); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 12, cursor: "pointer" }}>🗑️</button>}
           <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 12, cursor: "pointer" }}>📝 {showSubs ? "Ocultar" : "Ver"}</button>
           <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Pegar</button>
           <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
@@ -953,35 +962,87 @@ function RoutineView({ routine, onSave, theme, dk }) {
               </div>
             </div>
           )}
-          {blocks.map((b) => {
-            const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
-            const baseHeight = (timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN;
-            const hasSubs = b.subs && b.subs.length > 0;
-            const subsHeight = showSubs && hasSubs ? b.subs.length * 18 + 4 : 0;
-            const height = Math.max(baseHeight, 28 + subsHeight);
-            const duration = timeToMin(b.end) - timeToMin(b.start);
-            return (
-              <div key={b.id} style={{ position: "absolute", top, left: 4, right: 4, minHeight: height, borderRadius: 8, backgroundColor: b.color + "22", borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      {b.emoji && <span style={{ fontSize: 14 }}>{b.emoji}</span>}
-                      <span style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
-                    {showSubs && hasSubs && (
-                      <div style={{ marginTop: 3 }}>
-                        {b.subs.map((s) => (
-                          <div key={s.id} style={{ fontSize: 11, color: theme.textSec, lineHeight: "18px" }}>· {s.text}</div>
-                        ))}
+          {(() => {
+            // Calculate overlapping columns
+            const sorted = [...blocks];
+            const cols = []; // [{block, col, totalCols}]
+            sorted.forEach((b) => {
+              const bStart = timeToMin(b.start);
+              const bEnd = timeToMin(b.end);
+              // Find all blocks that overlap with this one
+              const overlapping = sorted.filter((o) => {
+                if (o.id === b.id) return false;
+                const oStart = timeToMin(o.start);
+                const oEnd = timeToMin(o.end);
+                return bStart < oEnd && bEnd > oStart;
+              });
+              cols.push({ block: b, overlaps: overlapping.map((o) => o.id) });
+            });
+            // Assign columns
+            const colAssign = {};
+            sorted.forEach((b) => {
+              const bStart = timeToMin(b.start);
+              const bEnd = timeToMin(b.end);
+              const usedCols = new Set();
+              sorted.forEach((o) => {
+                if (o.id === b.id || colAssign[o.id] === undefined) return;
+                const oStart = timeToMin(o.start);
+                const oEnd = timeToMin(o.end);
+                if (bStart < oEnd && bEnd > oStart) usedCols.add(colAssign[o.id]);
+              });
+              let col = 0;
+              while (usedCols.has(col)) col++;
+              colAssign[b.id] = col;
+            });
+            // Count max cols per group
+            const maxCols = {};
+            sorted.forEach((b) => {
+              const bStart = timeToMin(b.start);
+              const bEnd = timeToMin(b.end);
+              let groupMax = colAssign[b.id] + 1;
+              sorted.forEach((o) => {
+                const oStart = timeToMin(o.start);
+                const oEnd = timeToMin(o.end);
+                if (bStart < oEnd && bEnd > oStart) groupMax = Math.max(groupMax, colAssign[o.id] + 1);
+              });
+              maxCols[b.id] = groupMax;
+            });
+
+            return blocks.map((b) => {
+              const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
+              const baseHeight = (timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN;
+              const hasSubs = b.subs && b.subs.length > 0;
+              const subsHeight = showSubs && hasSubs ? b.subs.length * 18 + 4 : 0;
+              const height = Math.max(baseHeight, 28 + subsHeight);
+              const duration = timeToMin(b.end) - timeToMin(b.start);
+              const col = colAssign[b.id] || 0;
+              const totalC = maxCols[b.id] || 1;
+              const widthPct = 100 / totalC;
+              const leftPct = col * widthPct;
+              const opacity = b.opacity !== undefined ? b.opacity : 0.13;
+              return (
+                <div key={b.id} style={{ position: "absolute", top, left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, minHeight: height, borderRadius: 8, backgroundColor: b.color + Math.round(opacity * 255).toString(16).padStart(2, "0"), borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        {b.emoji && <span style={{ fontSize: 14 }}>{b.emoji}</span>}
+                        <span style={{ fontSize: 13, fontWeight: 600, color: b.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
                       </div>
-                    )}
+                      <div style={{ fontSize: 11, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
+                      {showSubs && hasSubs && (
+                        <div style={{ marginTop: 3 }}>
+                          {b.subs.map((s) => (
+                            <div key={s.id} style={{ fontSize: 11, color: theme.textSec, lineHeight: "18px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {s.text}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4, flexShrink: 0 }}>{I.x}</button>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4, flexShrink: 0 }}>{I.x}</button>
                 </div>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
           <div style={{ height: totalMin * PX_PER_MIN }} />
         </div>
       )}
