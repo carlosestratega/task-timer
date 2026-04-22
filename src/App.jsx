@@ -826,17 +826,30 @@ function RoutineView({ routine, onSave, theme, dk }) {
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
-      if (trimmed.startsWith("- ") && current) {
+      // Subtask: starts with -, –, —, ·, or •
+      if (/^[-–—·•]\s/.test(trimmed) && current) {
         if (!current.subs) current.subs = [];
-        current.subs.push({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, text: trimmed.slice(2) });
+        current.subs.push({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, text: trimmed.replace(/^[-–—·•]\s*/, "") });
         return;
       }
-      const m = trimmed.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\s*(.*)/);
+      // Time range: 08:00-10:30 or 08:00–10:30
+      const m = trimmed.match(/^(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})\s*(.*)/);
       if (m) {
         if (current) newBlocks.push(current);
         const rest = m[3].trim();
         const emojiMatch = rest.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*/u);
         current = { id: `rb-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, start: m[1].padStart(5, "0"), end: m[2].padStart(5, "0"), name: emojiMatch ? rest.slice(emojiMatch[0].length) : rest, emoji: emojiMatch ? emojiMatch[1] : null, color: COLORS[newBlocks.length % COLORS.length] };
+        return;
+      }
+      // Single time: 22:30 😴 Dormir (no end time → +30min)
+      const m2 = trimmed.match(/^(\d{1,2}:\d{2})\s+(.*)/);
+      if (m2) {
+        if (current) newBlocks.push(current);
+        const rest = m2[2].trim();
+        const emojiMatch = rest.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*/u);
+        const startMin = timeToMin(m2[1].padStart(5, "0"));
+        const endStr = (() => { const e = startMin + 30; return `${String(Math.floor(e / 60)).padStart(2, "0")}:${String(e % 60).padStart(2, "0")}`; })();
+        current = { id: `rb-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, start: m2[1].padStart(5, "0"), end: endStr, name: emojiMatch ? rest.slice(emojiMatch[0].length) : rest, emoji: emojiMatch ? emojiMatch[1] : null, color: COLORS[newBlocks.length % COLORS.length] };
       }
     });
     if (current) newBlocks.push(current);
@@ -901,8 +914,8 @@ function RoutineView({ routine, onSave, theme, dk }) {
 
       {showPaste && (
         <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
-          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 6 }}>Formato: <code>09:00-10:00 🏋️ Deporte</code> (una línea por bloque, subtareas con <code>- texto</code>)</div>
-          <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"09:00-10:00 🏋️ Deporte\n- Calentamiento\n- Pesas\n10:30-11:00 🧘 Meditación\n13:00-14:00 🍽️ Comida"} rows={6} style={{ width: "100%", padding: "10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "monospace" }} />
+          <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 6 }}>Formato: <code>09:00–10:30 🏋️ Deporte</code> (subtareas con <code>– texto</code> o <code>- texto</code>). Solo hora sin rango = bloque de 30min.</div>
+          <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"08:00–10:30 🧠 Bloque creativo\n– Agua con teanina\n– Tarea definida\n10:30–11:00 🍳 Desayuno\n22:30 😴 Apagado y dormir"} rows={6} style={{ width: "100%", padding: "10px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "monospace" }} />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
             <button onClick={() => setShowPaste(false)} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.text, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
             <button onClick={parsePaste} style={{ padding: "8px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Importar</button>
