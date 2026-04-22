@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, useDraggable, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -1310,7 +1310,7 @@ function HabitsView({ categories, onUpdate, theme, dk, colOrder, onColOrderChang
                     </div>
                     <div onClick={() => { setEditHabit(editHabit === t.id ? null : t.id); setEditEmoji(t.emoji || ""); setEditDays([...(t.recurring || [])]); }} style={{ cursor: "pointer" }}>
                       <div style={{ fontSize: 18 }}>{t.emoji || t.name.charAt(0)}</div>
-                      <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", maxWidth: 56, margin: "0 auto", textAlign: "center", lineHeight: "12px", wordBreak: "break-word" }}>{t.name}</div>
+                      <div style={{ fontSize: 9, color: theme.textSec, marginTop: 1, overflow: "hidden", maxWidth: 56, margin: "1px auto 0", textAlign: "center", lineHeight: "12px", wordBreak: "break-word", maxHeight: 24 }}>{t.name}</div>
                     </div>
                   </th>
                 ))}
@@ -2133,7 +2133,20 @@ function StatsView({ categories, theme, dk, onClose }) {
 }
 
 // ─── App ───────────────────────────────────────────────
-export default function App() {
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) return React.createElement("div", { style: { padding: 40, textAlign: "center", color: "#fff", backgroundColor: "#111", minHeight: "100vh" } },
+      React.createElement("h2", null, "Error en la app"),
+      React.createElement("pre", { style: { color: "#ef4444", fontSize: 12, whiteSpace: "pre-wrap", textAlign: "left", maxWidth: 600, margin: "20px auto" } }, String(this.state.error?.message || this.state.error)),
+      React.createElement("button", { onClick: () => { localStorage.clear(); window.location.reload(); }, style: { marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, cursor: "pointer" } }, "Reiniciar app")
+    );
+    return this.props.children;
+  }
+}
+
+function AppInner() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dk, setDk] = useState(loadTheme);
@@ -3491,4 +3504,8 @@ export default function App() {
       `}</style>
     </div>
   );
+}
+
+export default function App() {
+  return React.createElement(ErrorBoundary, null, React.createElement(AppInner));
 }
