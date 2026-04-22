@@ -799,6 +799,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const [emoji, setEmoji] = useState("");
   const [subs, setSubs] = useState([]);
   const [subInput, setSubInput] = useState("");
+  const [showSubs, setShowSubs] = useState(true);
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
   const blocks = (routine || []).sort((a, b) => a.start.localeCompare(b.start));
 
@@ -892,6 +893,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Mi rutina diaria</h2>
         <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 12, cursor: "pointer" }}>📝 {showSubs ? "Ocultar" : "Ver"}</button>
           <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Pegar</button>
           <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
         </div>
@@ -940,9 +942,11 @@ function RoutineView({ routine, onSave, theme, dk }) {
           )}
           {blocks.map((b) => {
             const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
-            const height = Math.max((timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN, 28);
-            const duration = timeToMin(b.end) - timeToMin(b.start);
+            const baseHeight = (timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN;
             const hasSubs = b.subs && b.subs.length > 0;
+            const subsHeight = showSubs && hasSubs ? b.subs.length * 18 + 4 : 0;
+            const height = Math.max(baseHeight, 28 + subsHeight);
+            const duration = timeToMin(b.end) - timeToMin(b.start);
             return (
               <div key={b.id} style={{ position: "absolute", top, left: 4, right: 4, minHeight: height, borderRadius: 8, backgroundColor: b.color + "22", borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -952,7 +956,13 @@ function RoutineView({ routine, onSave, theme, dk }) {
                       <span style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name}</span>
                     </div>
                     <div style={{ fontSize: 11, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
-                    {hasSubs && <div style={{ fontSize: 11, color: theme.textSec, marginTop: 2 }}>{b.subs.map((s) => s.text).join(" · ")}</div>}
+                    {showSubs && hasSubs && (
+                      <div style={{ marginTop: 3 }}>
+                        {b.subs.map((s) => (
+                          <div key={s.id} style={{ fontSize: 11, color: theme.textSec, lineHeight: "18px" }}>· {s.text}</div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4, flexShrink: 0 }}>{I.x}</button>
                 </div>
