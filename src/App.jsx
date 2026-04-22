@@ -1175,7 +1175,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
           <button key={s.key} onClick={() => setKSort(s.key)} style={{ padding: "4px 10px", borderRadius: 14, border: kSort === s.key ? "none" : `1px solid ${theme.border}`, backgroundColor: kSort === s.key ? theme.surface : "transparent", color: kSort === s.key ? theme.text : theme.textSec, fontSize: 11, fontWeight: kSort === s.key ? 600 : 400, cursor: "pointer" }}>{s.label}</button>
         ))}
       </div>
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="kanban-cols">
       {cols.map((col) => (
         <div key={col.key} className="kanban-col" style={{ marginBottom: 16, minWidth: 0 }}>
@@ -1185,8 +1185,7 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
               <span style={{ fontSize: 13, fontWeight: 700, color: col.color }}>{col.label}</span>
               <span style={{ fontSize: 11, color: theme.textSec, backgroundColor: theme.surface, padding: "0 6px", borderRadius: 8 }}>{grouped[col.key].length}</span>
             </div>
-          </DroppableArea>
-          {grouped[col.key].length === 0 && <DroppableArea id={col.key}><div style={{ padding: "20px 8px", fontSize: 11, color: theme.textSec, textAlign: "center", border: `1px dashed ${theme.border}`, borderRadius: 8 }}>Arrastra aquí</div></DroppableArea>}
+            {grouped[col.key].length === 0 && <div style={{ padding: "20px 8px", fontSize: 11, color: theme.textSec, textAlign: "center", border: `1px dashed ${theme.border}`, borderRadius: 8 }}>Arrastra aquí</div>}
           {grouped[col.key].map((t) => (
             <DraggableCard key={t.id} id={t.id}>
               <div onClick={() => onTimerView(t.id)} style={{ padding: "8px 10px", marginBottom: 4, borderRadius: 8, backgroundColor: isOverdue(t) ? "#ef444412" : theme.card, border: `1px solid ${isOverdue(t) ? "#ef444433" : theme.border}`, borderLeft: `3px solid ${t.catColor}`, cursor: "pointer" }}>
@@ -1211,6 +1210,8 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
               </div>
             </DraggableCard>
           ))}
+            <div style={{ minHeight: 40 }} />
+          </DroppableArea>
         </div>
       ))}
       </div>
