@@ -804,13 +804,13 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const [fontSize, setFontSize] = useState(13);
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
   const toHex = (o) => { const v = Math.round((parseFloat(o) || 0.13) * 255); return Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"); };
-  const blocks = (routine || []).sort((a, b) => a.start.localeCompare(b.start));
+  const blocks = [...(routine || [])].sort((a, b) => a.start.localeCompare(b.start));
 
   const timeToMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
   const startHour = blocks.length > 0 ? Math.min(Math.floor(timeToMin(blocks[0].start) / 60), 7) : 7;
   const endHour = blocks.length > 0 ? Math.max(Math.ceil(timeToMin(blocks[blocks.length - 1].end) / 60), 23) : 23;
   const totalMin = (endHour - startHour) * 60;
-  const PX_PER_MIN = 1.8;
+  const PX_PER_MIN = 2.2;
 
   const addSub = () => { if (!subInput.trim()) return; setSubs([...subs, { id: `rs-${Date.now()}`, text: subInput.trim() }]); setSubInput(""); };
   const removeSub = (id) => setSubs(subs.filter((s) => s.id !== id));
@@ -978,7 +978,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
                 if (o.id === b.id) return false;
                 const oStart = timeToMin(o.start);
                 const oEnd = timeToMin(o.end);
-                return bStart < oEnd - 1 && bEnd > oStart + 1;
+                return bStart < oEnd && bEnd > oStart;
               });
               cols.push({ block: b, overlaps: overlapping.map((o) => o.id) });
             });
@@ -992,7 +992,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
                 if (o.id === b.id || colAssign[o.id] === undefined) return;
                 const oStart = timeToMin(o.start);
                 const oEnd = timeToMin(o.end);
-                if (bStart < oEnd - 1 && bEnd > oStart + 1) usedCols.add(colAssign[o.id]);
+                if (bStart < oEnd && bEnd > oStart) usedCols.add(colAssign[o.id]);
               });
               let col = 0;
               while (usedCols.has(col)) col++;
@@ -1005,27 +1005,26 @@ function RoutineView({ routine, onSave, theme, dk }) {
               const bEnd = timeToMin(b.end);
               let groupMax = colAssign[b.id] + 1;
               sorted.forEach((o) => {
+                if (o.id === b.id) return;
                 const oStart = timeToMin(o.start);
                 const oEnd = timeToMin(o.end);
-                if (bStart < oEnd - 1 && bEnd > oStart + 1) groupMax = Math.max(groupMax, colAssign[o.id] + 1);
+                if (bStart < oEnd && bEnd > oStart) groupMax = Math.max(groupMax, colAssign[o.id] + 1);
               });
               maxCols[b.id] = groupMax;
             });
 
             return blocks.map((b) => {
               const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
-              const baseHeight = (timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN;
-              const hasSubs = b.subs && b.subs.length > 0;
-              const subsHeight = showSubs && hasSubs ? b.subs.length * (fontSize + 5) + 4 : 0;
-              const height = Math.max(baseHeight, 28 + subsHeight);
+              const height = Math.max((timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN, 22);
               const duration = timeToMin(b.end) - timeToMin(b.start);
+              const hasSubs = b.subs && b.subs.length > 0;
               const col = colAssign[b.id] || 0;
               const totalC = maxCols[b.id] || 1;
               const widthPct = 100 / totalC;
               const leftPct = col * widthPct;
               const opacity = b.opacity !== undefined ? b.opacity : 0.13;
               return (
-                <div key={b.id} style={{ position: "absolute", top, left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, minHeight: height, borderRadius: 8, backgroundColor: b.color + toHex(opacity), borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
+                <div key={b.id} style={{ position: "absolute", top, left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, height, borderRadius: 8, backgroundColor: b.color + toHex(opacity), borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
