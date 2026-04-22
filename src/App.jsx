@@ -801,7 +801,8 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const [subs, setSubs] = useState([]);
   const [subInput, setSubInput] = useState("");
   const [showSubs, setShowSubs] = useState(true);
-  const [fontSize, setFontSize] = useState(13);
+  const [fontSize, setFontSize] = useState(() => { try { const s = localStorage.getItem("task-timer-routine-font"); return s ? parseInt(s) : 13; } catch (e) { return 13; } });
+  const changeFontSize = (delta) => { setFontSize((s) => { const n = Math.max(10, Math.min(20, s + delta)); try { localStorage.setItem("task-timer-routine-font", String(n)); } catch (e) {} return n; }); };
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
   const toHex = (o) => { const v = Math.round((parseFloat(o) || 0.13) * 255); return Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"); };
   const blocks = [...(routine || [])].sort((a, b) => a.start.localeCompare(b.start));
@@ -918,8 +919,8 @@ function RoutineView({ routine, onSave, theme, dk }) {
         <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setOpacity(0.13); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", alignItems: "center" }}>
-        <button onClick={() => setFontSize((s) => Math.min(s + 1, 20))} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A+</button>
-        <button onClick={() => setFontSize((s) => Math.max(s - 1, 10))} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A−</button>
+        <button onClick={() => changeFontSize(1)} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A+</button>
+        <button onClick={() => changeFontSize(-1)} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A−</button>
         <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>📝 {showSubs ? "Ocultar" : "Ver notas"}</button>
         <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>📋 Pegar</button>
         {blocks.length > 0 && <button onClick={() => onSave([])} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>🗑️ Borrar todo</button>}
