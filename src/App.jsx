@@ -1108,12 +1108,11 @@ function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, them
 
   const getStatus = (t) => {
     if (t.recurring) {
-      // Daily reset: if kanbanStatusDate is today, use saved status. Otherwise "todo"
       if (t.kanbanStatusDate === today && t.kanbanStatus) return t.kanbanStatus;
       return "todo";
     }
-    if (t.kanbanStatus) return t.kanbanStatus;
     if (t.completed) return "done";
+    if (t.kanbanStatus) return t.kanbanStatus;
     if (t.isRunning || t.totalSeconds > 0) return "doing";
     return "todo";
   };
@@ -2570,7 +2569,7 @@ function AppInner() {
   };
 
   const resetTask = (id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); setElapsed(0); } update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, totalSeconds: 0, isRunning: false, startedAt: null, sessions: [] } : t) }))); setModal(null); };
-  const completeTask = (id) => { if (activeId === id) doStop(id); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, completedAt: new Date().toISOString(), isRunning: false, startedAt: null } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
+  const completeTask = (id) => { if (activeId === id) doStop(id); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: true, completedAt: new Date().toISOString(), isRunning: false, startedAt: null, kanbanStatus: "done" } : t) }))); setModal(null); if (timerView === id) setTimerView(null); };
   const uncomplete = (id) => update((p) => p.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, completed: false, completedAt: null } : t) })));
   const delTask = (id) => { if (activeId === id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === id) setTimerView(null); update((p) => p.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== id) }))); setModal(null); };
   const delCat = (id) => { const c = categories.find((x) => x.id === id); if (c) c.tasks.forEach((t) => { if (activeId === t.id) { clearInterval(intRef.current); setActiveId(null); } if (timerView === t.id) setTimerView(null); }); update((p) => p.filter((x) => x.id !== id)); setModal(null); };
