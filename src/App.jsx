@@ -787,6 +787,94 @@ function DraggableCard({ id, children }) {
   return <div ref={setNodeRef} {...listeners} {...attributes} style={style}>{children}</div>;
 }
 
+function DailyView({ dailyPlans, onSave, categories, onTimerView, theme, dk }) {
+  const [dayOffset, setDayOffset] = useState(0);
+  const [input, setInput] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editVal, setEditVal] = useState("");
+  const targetDate = (() => { const d = new Date(); d.setDate(d.getDate() + dayOffset); return d; })();
+  const ds = getDateStr(targetDate);
+  const dayLabel = targetDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  const isToday = dayOffset === 0;
+  const items = dailyPlans[ds] || [];
+
+  const save = (newItems) => onSave({ ...dailyPlans, [ds]: newItems });
+  const addItem = () => { if (!input.trim()) return; save([...items, { id: `dp-${Date.now()}`, text: input.trim(), done: false }]); setInput(""); };
+  const toggleItem = (id) => save(items.map((it) => it.id === id ? { ...it, done: !it.done } : it));
+  const deleteItem = (id) => save(items.filter((it) => it.id !== id));
+  const saveEdit = (id) => { save(items.map((it) => it.id === id ? { ...it, text: editVal } : it)); setEditId(null); };
+  const moveItem = (id, dir) => { const idx = items.findIndex((it) => it.id === id); if (idx < 0) return; const ni = idx + dir; if (ni < 0 || ni >= items.length) return; const arr = [...items]; [arr[idx], arr[ni]] = [arr[ni], arr[idx]]; save(arr); };
+  const copyYesterday = () => { const yd = new Date(targetDate); yd.setDate(yd.getDate() - 1); const yds = getDateStr(yd); const yi = dailyPlans[yds] || []; if (yi.length === 0) return; const pending = yi.filter((it) => !it.done); if (pending.length === 0) return; const newItems = [...items, ...pending.map((it) => ({ ...it, id: `dp-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, done: false }))]; save(newItems); };
+  const doneCount = items.filter((it) => it.done).length;
+
+  // Tasks with dates matching this day
+  const tasksForDay = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.plannedDate === ds || t.dueDate === ds)).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
+
+  return (
+    <div style={{ padding: "12px 0 100px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <button onClick={() => setDayOffset(dayOffset - 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>‹</button>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, textTransform: "capitalize" }}>{isToday ? "Hoy" : dayOffset === 1 ? "Mañana" : dayOffset === -1 ? "Ayer" : dayLabel}</div>
+          <div style={{ fontSize: 12, color: theme.textSec, textTransform: "capitalize" }}>{dayLabel}</div>
+        </div>
+        <button onClick={() => setDayOffset(dayOffset + 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>›</button>
+      </div>
+
+      {items.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "8px 12px", borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+          <div style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: dk ? "#1a1a1a" : "#eee", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${items.length > 0 ? (doneCount / items.length) * 100 : 0}%`, backgroundColor: doneCount === items.length ? "#10b981" : "#6366f1", borderRadius: 3, transition: "width .3s" }} />
+          </div>
+          <span style={{ fontSize: 13, color: theme.textSec, flexShrink: 0 }}>{doneCount}/{items.length}</span>
+        </div>
+      )}
+
+      {/* Tasks for this day */}
+      {tasksForDay.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Tareas del día</div>
+          {tasksForDay.map((t) => (
+            <div key={t.id} onClick={() => onTimerView(t.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 3, borderRadius: 8, backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderLeft: `3px solid ${t.catColor}`, cursor: "pointer" }}>
+              {t.emoji && <span>{t.emoji}</span>}
+              <span style={{ flex: 1, fontSize: 14 }}>{t.name}</span>
+              <span style={{ fontSize: 11, color: theme.textSec }}>{t.catName}</span>
+              {t.plannedDate === ds && <span style={{ fontSize: 10, color: "#6366f1" }}>📅</span>}
+              {t.dueDate === ds && <span style={{ fontSize: 10, color: "#ef4444" }}>⚠️</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Daily checklist */}
+      <div style={{ fontSize: 11, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Plan del día</div>
+      {items.map((it, idx) => (
+        <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 3, borderRadius: 8, backgroundColor: it.done ? (dk ? "#0a0a0a" : "#f8f8f8") : theme.card, border: `1px solid ${theme.border}` }}>
+          <div onClick={() => toggleItem(it.id)} style={{ width: 22, height: 22, borderRadius: 6, border: it.done ? "none" : `2px solid ${theme.border}`, backgroundColor: it.done ? "#10b981" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#fff", fontSize: 14 }}>{it.done ? "✓" : ""}</div>
+          {editId === it.id ? (
+            <input autoFocus value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it.id); if (e.key === "Escape") setEditId(null); }} onBlur={() => saveEdit(it.id)} style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+          ) : (
+            <span onClick={() => { setEditId(it.id); setEditVal(it.text); }} style={{ flex: 1, fontSize: 14, textDecoration: it.done ? "line-through" : "none", color: it.done ? theme.textSec : theme.text, cursor: "pointer" }}>{it.text}</span>
+          )}
+          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+            <button onClick={() => moveItem(it.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: idx === 0 ? 0.15 : 0.4, fontSize: 10 }}>▲</button>
+            <button onClick={() => moveItem(it.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: idx === items.length - 1 ? 0.15 : 0.4, fontSize: 10 }}>▼</button>
+            <button onClick={() => deleteItem(it.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.x}</button>
+          </div>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addItem(); }} placeholder="Añadir al plan..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+        <button onClick={addItem} style={{ padding: "10px 16px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: input.trim() ? 1 : 0.5 }}>+</button>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button onClick={copyYesterday} style={{ flex: 1, padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Copiar pendientes de ayer</button>
+        {!isToday && <button onClick={() => setDayOffset(0)} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>Hoy</button>}
+      </div>
+    </div>
+  );
+}
+
 function KanbanView({ categories, onUpdate, onTimerView, activeId, elapsed, theme, dk, focusPanel, addToFocus, removeFromFocus, onStopTimer }) {
   const [kFilter, setKFilter] = useState("today");
   const [kSort, setKSort] = useState("due");
@@ -1843,6 +1931,8 @@ export default function App() {
   const [timerView, setTimerView] = useState(null);
   const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
   const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); return s ? JSON.parse(s) : null; } catch (e) { return null; } });
+  const [dailyPlans, setDailyPlans] = useState(() => { try { const s = localStorage.getItem("task-timer-daily"); return s ? JSON.parse(s) : {}; } catch (e) { return {}; } });
+  const saveDailyPlans = (plans) => { setDailyPlans(plans); try { localStorage.setItem("task-timer-daily", JSON.stringify(plans)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { dailyPlans: plans }); };
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showStats, setShowStats] = useState(false);
@@ -1918,6 +2008,7 @@ export default function App() {
       setCat(cats); saveLocal(cats);
       if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
       if (data.habitsOrder) { setHabitsOrder(data.habitsOrder); localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); }
+      if (data.dailyPlans) { setDailyPlans(data.dailyPlans); try { localStorage.setItem("task-timer-daily", JSON.stringify(data.dailyPlans)); } catch (e) {} }
       // Recover tags: merge cloud + local + extracted from sessions
       const cloudTags = data.tags && data.tags.length > 0 ? data.tags : [];
       const localTags = tagsRef.current || [];
@@ -1954,6 +2045,7 @@ export default function App() {
       if (data.tags && data.tags.length > 0) { setTags(data.tags); saveTags(data.tags); }
       if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
       if (data.habitsOrder !== undefined) { setHabitsOrder(data.habitsOrder && data.habitsOrder.length > 0 ? data.habitsOrder : null); try { if (data.habitsOrder?.length > 0) localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} }
+      if (data.dailyPlans) { setDailyPlans(data.dailyPlans); try { localStorage.setItem("task-timer-daily", JSON.stringify(data.dailyPlans)); } catch (e) {} }
       // Check if remote stopped/started a timer
       let remoteRunning = null;
       for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) { remoteRunning = t; break; } } if (remoteRunning) break; }
@@ -2669,6 +2761,10 @@ export default function App() {
                 {isActive ? I.pause : I.play}
               </button>
               <button onClick={() => writeNfc(timerView, t.name)} style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", padding: "6px 14px", fontSize: 12 }}>{I.nfc} NFC</button>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "center" }}>
+                <button onClick={() => update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, permanent: !tk.permanent } : tk) })))} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 10, border: `1px solid ${t.permanent ? "#8b5cf6" : theme.border}`, backgroundColor: t.permanent ? "#8b5cf622" : "transparent", color: t.permanent ? "#8b5cf6" : theme.textSec, cursor: "pointer", fontSize: 12 }}>♾️ {t.permanent ? "Permanente" : "No permanente"}</button>
+                <button onClick={() => { if (t.recurring && t.recurring.length > 0) { update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: null } : tk) }))); } else { update((p) => p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => tk.id === timerView ? { ...tk, recurring: [1,2,3,4,5] } : tk) }))); } }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 10, border: `1px solid ${t.recurring ? "#6366f1" : theme.border}`, backgroundColor: t.recurring ? "#6366f122" : "transparent", color: t.recurring ? "#6366f1" : theme.textSec, cursor: "pointer", fontSize: 12 }}>🔁 {t.recurring ? "Hábito" : "No hábito"}</button>
+              </div>
               {/* Focus panel */}
               {focusPanel.length > 0 && (
                 <div style={{ marginTop: 16, display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", maxWidth: 360 }}>
@@ -2973,11 +3069,12 @@ export default function App() {
         {/* Categories */}
         {/* View tabs */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border}` }}>
-          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }, { key: "calendar", label: "📅" }].map((v) => (
+          {[{ key: "tasks", label: "Tareas" }, { key: "daily", label: "Día a día" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }, { key: "calendar", label: "📅" }].map((v) => (
             <button key={v.key} onClick={() => setMainView(v.key)} style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: mainView === v.key ? `2px solid ${theme.accent}` : "2px solid transparent", color: mainView === v.key ? theme.text : theme.textSec, fontSize: 14, fontWeight: mainView === v.key ? 600 : 400, cursor: "pointer" }}>{v.label}</button>
           ))}
         </div>
 
+        {mainView === "daily" && <DailyView dailyPlans={dailyPlans} onSave={saveDailyPlans} categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
         {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} focusPanel={focusPanel} addToFocus={addToFocus} removeFromFocus={removeFromFocus} onStopTimer={(id) => { if (activeId === id) { clearInterval(intRef.current); finishStop(id, null); } }} />}
         {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} colOrder={habitsOrder} onColOrderChange={saveHabitsOrder} />}
         {mainView === "calendar" && <CalendarView categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
