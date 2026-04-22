@@ -801,6 +801,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const [subs, setSubs] = useState([]);
   const [subInput, setSubInput] = useState("");
   const [showSubs, setShowSubs] = useState(true);
+  const [fontSize, setFontSize] = useState(13);
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
   const toHex = (o) => { const v = Math.round((parseFloat(o) || 0.13) * 255); return Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"); };
   const blocks = (routine || []).sort((a, b) => a.start.localeCompare(b.start));
@@ -912,14 +913,16 @@ function RoutineView({ routine, onSave, theme, dk }) {
 
   return (
     <div style={{ padding: "12px 0 100px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Mi rutina diaria</h2>
-        <div style={{ display: "flex", gap: 6 }}>
-          {blocks.length > 0 && <button onClick={() => onSave([])} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 12, cursor: "pointer" }}>🗑️</button>}
-          <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 12, cursor: "pointer" }}>📝 {showSubs ? "Ocultar" : "Ver"}</button>
-          <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Pegar</button>
-          <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
-        </div>
+        <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor(COLORS[blocks.length % COLORS.length]); setEmoji(""); setSubs([]); setOpacity(0.13); setShowPaste(false); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", alignItems: "center" }}>
+        <button onClick={() => setFontSize((s) => Math.min(s + 1, 20))} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A+</button>
+        <button onClick={() => setFontSize((s) => Math.max(s - 1, 10))} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A−</button>
+        <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>📝 {showSubs ? "Ocultar" : "Ver notas"}</button>
+        <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>📋 Pegar</button>
+        {blocks.length > 0 && <button onClick={() => onSave([])} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>🗑️ Borrar todo</button>}
       </div>
 
       {showPaste && (
@@ -975,7 +978,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
                 if (o.id === b.id) return false;
                 const oStart = timeToMin(o.start);
                 const oEnd = timeToMin(o.end);
-                return bStart < oEnd && bEnd > oStart;
+                return bStart < oEnd - 1 && bEnd > oStart + 1;
               });
               cols.push({ block: b, overlaps: overlapping.map((o) => o.id) });
             });
@@ -989,7 +992,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
                 if (o.id === b.id || colAssign[o.id] === undefined) return;
                 const oStart = timeToMin(o.start);
                 const oEnd = timeToMin(o.end);
-                if (bStart < oEnd && bEnd > oStart) usedCols.add(colAssign[o.id]);
+                if (bStart < oEnd - 1 && bEnd > oStart + 1) usedCols.add(colAssign[o.id]);
               });
               let col = 0;
               while (usedCols.has(col)) col++;
@@ -1004,7 +1007,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
               sorted.forEach((o) => {
                 const oStart = timeToMin(o.start);
                 const oEnd = timeToMin(o.end);
-                if (bStart < oEnd && bEnd > oStart) groupMax = Math.max(groupMax, colAssign[o.id] + 1);
+                if (bStart < oEnd - 1 && bEnd > oStart + 1) groupMax = Math.max(groupMax, colAssign[o.id] + 1);
               });
               maxCols[b.id] = groupMax;
             });
@@ -1013,7 +1016,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
               const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
               const baseHeight = (timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN;
               const hasSubs = b.subs && b.subs.length > 0;
-              const subsHeight = showSubs && hasSubs ? b.subs.length * 18 + 4 : 0;
+              const subsHeight = showSubs && hasSubs ? b.subs.length * (fontSize + 5) + 4 : 0;
               const height = Math.max(baseHeight, 28 + subsHeight);
               const duration = timeToMin(b.end) - timeToMin(b.start);
               const col = colAssign[b.id] || 0;
@@ -1026,14 +1029,14 @@ function RoutineView({ routine, onSave, theme, dk }) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        {b.emoji && <span style={{ fontSize: 14 }}>{b.emoji}</span>}
-                        <span style={{ fontSize: 13, fontWeight: 600, color: b.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
+                        {b.emoji && <span style={{ fontSize: fontSize + 1 }}>{b.emoji}</span>}
+                        <span style={{ fontSize, fontWeight: 600, color: b.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
                       </div>
-                      <div style={{ fontSize: 11, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
+                      <div style={{ fontSize: fontSize - 2, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
                       {showSubs && hasSubs && (
                         <div style={{ marginTop: 3 }}>
                           {b.subs.map((s) => (
-                            <div key={s.id} style={{ fontSize: 11, color: theme.textSec, lineHeight: "18px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {s.text}</div>
+                            <div key={s.id} style={{ fontSize: fontSize - 2, color: theme.textSec, lineHeight: `${fontSize + 5}px`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {s.text}</div>
                           ))}
                         </div>
                       )}
