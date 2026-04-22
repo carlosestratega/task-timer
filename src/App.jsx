@@ -787,90 +787,131 @@ function DraggableCard({ id, children }) {
   return <div ref={setNodeRef} {...listeners} {...attributes} style={style}>{children}</div>;
 }
 
-function DailyView({ dailyPlans, onSave, categories, onTimerView, theme, dk }) {
-  const [dayOffset, setDayOffset] = useState(0);
-  const [input, setInput] = useState("");
+function RoutineView({ routine, onSave, theme, dk }) {
+  const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [editVal, setEditVal] = useState("");
-  const targetDate = (() => { const d = new Date(); d.setDate(d.getDate() + dayOffset); return d; })();
-  const ds = getDateStr(targetDate);
-  const dayLabel = targetDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
-  const isToday = dayOffset === 0;
-  const items = dailyPlans[ds] || [];
+  const [name, setName] = useState("");
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("10:00");
+  const [color, setColor] = useState("#6366f1");
+  const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
+  const blocks = (routine || []).sort((a, b) => a.start.localeCompare(b.start));
 
-  const save = (newItems) => onSave({ ...dailyPlans, [ds]: newItems });
-  const addItem = () => { if (!input.trim()) return; save([...items, { id: `dp-${Date.now()}`, text: input.trim(), done: false }]); setInput(""); };
-  const toggleItem = (id) => save(items.map((it) => it.id === id ? { ...it, done: !it.done } : it));
-  const deleteItem = (id) => save(items.filter((it) => it.id !== id));
-  const saveEdit = (id) => { save(items.map((it) => it.id === id ? { ...it, text: editVal } : it)); setEditId(null); };
-  const moveItem = (id, dir) => { const idx = items.findIndex((it) => it.id === id); if (idx < 0) return; const ni = idx + dir; if (ni < 0 || ni >= items.length) return; const arr = [...items]; [arr[idx], arr[ni]] = [arr[ni], arr[idx]]; save(arr); };
-  const copyYesterday = () => { const yd = new Date(targetDate); yd.setDate(yd.getDate() - 1); const yds = getDateStr(yd); const yi = dailyPlans[yds] || []; if (yi.length === 0) return; const pending = yi.filter((it) => !it.done); if (pending.length === 0) return; const newItems = [...items, ...pending.map((it) => ({ ...it, id: `dp-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, done: false }))]; save(newItems); };
-  const doneCount = items.filter((it) => it.done).length;
+  const timeToMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  const minToTime = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const startHour = blocks.length > 0 ? Math.min(Math.floor(timeToMin(blocks[0].start) / 60), 7) : 7;
+  const endHour = blocks.length > 0 ? Math.max(Math.ceil(timeToMin(blocks[blocks.length - 1].end) / 60), 23) : 23;
+  const totalMin = (endHour - startHour) * 60;
+  const PX_PER_MIN = 1.8;
 
-  // Tasks with dates matching this day
-  const tasksForDay = categories.flatMap((c) => c.tasks.filter((t) => !t.completed && (t.plannedDate === ds || t.dueDate === ds)).map((t) => ({ ...ensureTask(t), catName: c.name, catColor: c.color })));
+  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color }; onSave([...(routine || []), b]); setName(""); setAdding(false); };
+  const deleteBlock = (id) => onSave((routine || []).filter((b) => b.id !== id));
+  const startEdit = (b) => { setEditId(b.id); setName(b.name); setStart(b.start); setEnd(b.end); setColor(b.color); };
+  const saveEdit = () => { onSave((routine || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color } : b)); setEditId(null); setName(""); };
+  const cancelEdit = () => { setEditId(null); setAdding(false); setName(""); };
+
+  // Current time marker
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowInRange = nowMin >= startHour * 60 && nowMin <= endHour * 60;
 
   return (
     <div style={{ padding: "12px 0 100px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <button onClick={() => setDayOffset(dayOffset - 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>‹</button>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, textTransform: "capitalize" }}>{isToday ? "Hoy" : dayOffset === 1 ? "Mañana" : dayOffset === -1 ? "Ayer" : dayLabel}</div>
-          <div style={{ fontSize: 12, color: theme.textSec, textTransform: "capitalize" }}>{dayLabel}</div>
-        </div>
-        <button onClick={() => setDayOffset(dayOffset + 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", fontSize: 22, padding: "4px 12px" }}>›</button>
+        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Mi rutina diaria</h2>
+        <button onClick={() => { setAdding(true); setEditId(null); setName(""); setStart("09:00"); setEnd("10:00"); setColor("#6366f1"); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Bloque</button>
       </div>
 
-      {items.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "8px 12px", borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
-          <div style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: dk ? "#1a1a1a" : "#eee", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${items.length > 0 ? (doneCount / items.length) * 100 : 0}%`, backgroundColor: doneCount === items.length ? "#10b981" : "#6366f1", borderRadius: 3, transition: "width .3s" }} />
-          </div>
-          <span style={{ fontSize: 13, color: theme.textSec, flexShrink: 0 }}>{doneCount}/{items.length}</span>
-        </div>
-      )}
-
-      {/* Tasks for this day */}
-      {tasksForDay.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Tareas del día</div>
-          {tasksForDay.map((t) => (
-            <div key={t.id} onClick={() => onTimerView(t.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 3, borderRadius: 8, backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderLeft: `3px solid ${t.catColor}`, cursor: "pointer" }}>
-              {t.emoji && <span>{t.emoji}</span>}
-              <span style={{ flex: 1, fontSize: 14 }}>{t.name}</span>
-              <span style={{ fontSize: 11, color: theme.textSec }}>{t.catName}</span>
-              {t.plannedDate === ds && <span style={{ fontSize: 10, color: "#6366f1" }}>📅</span>}
-              {t.dueDate === ds && <span style={{ fontSize: 10, color: "#ef4444" }}>⚠️</span>}
+      {(adding || editId) && (
+        <div style={{ padding: 14, marginBottom: 16, borderRadius: 12, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") editId ? saveEdit() : addBlock(); if (e.key === "Escape") cancelEdit(); }} placeholder="Nombre del bloque..." style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none", marginBottom: 10 }} />
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 3 }}>Inicio</div>
+              <input type="time" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
             </div>
-          ))}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: theme.textSec, marginBottom: 3 }}>Fin</div>
+              <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            {COLORS.map((c) => (
+              <div key={c} onClick={() => setColor(c)} style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: c, cursor: "pointer", border: color === c ? "3px solid " + theme.text : "2px solid transparent", opacity: color === c ? 1 : 0.5 }} />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={cancelEdit} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.text, fontSize: 14, cursor: "pointer" }}>Cancelar</button>
+            <button onClick={editId ? saveEdit : addBlock} style={{ padding: "8px 16px", borderRadius: 8, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: name.trim() ? 1 : 0.5 }}>{editId ? "Guardar" : "Crear"}</button>
+          </div>
         </div>
       )}
 
-      {/* Daily checklist */}
-      <div style={{ fontSize: 11, fontWeight: 600, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Plan del día</div>
-      {items.map((it, idx) => (
-        <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 3, borderRadius: 8, backgroundColor: it.done ? (dk ? "#0a0a0a" : "#f8f8f8") : theme.card, border: `1px solid ${theme.border}` }}>
-          <div onClick={() => toggleItem(it.id)} style={{ width: 22, height: 22, borderRadius: 6, border: it.done ? "none" : `2px solid ${theme.border}`, backgroundColor: it.done ? "#10b981" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#fff", fontSize: 14 }}>{it.done ? "✓" : ""}</div>
-          {editId === it.id ? (
-            <input autoFocus value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it.id); if (e.key === "Escape") setEditId(null); }} onBlur={() => saveEdit(it.id)} style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
-          ) : (
-            <span onClick={() => { setEditId(it.id); setEditVal(it.text); }} style={{ flex: 1, fontSize: 14, textDecoration: it.done ? "line-through" : "none", color: it.done ? theme.textSec : theme.text, cursor: "pointer" }}>{it.text}</span>
+      {blocks.length === 0 && !adding && (
+        <div style={{ textAlign: "center", padding: "40px 0", color: theme.textSec }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+          <div style={{ fontSize: 14 }}>Crea bloques horarios para estructurar tu día</div>
+        </div>
+      )}
+
+      {blocks.length > 0 && (
+        <div style={{ position: "relative", marginLeft: 50 }}>
+          {/* Hour labels */}
+          {Array.from({ length: endHour - startHour + 1 }, (_, i) => {
+            const h = startHour + i;
+            return (
+              <div key={h} style={{ position: "absolute", top: (h - startHour) * 60 * PX_PER_MIN, left: -50, fontSize: 11, color: theme.textSec, fontVariantNumeric: "tabular-nums", width: 42, textAlign: "right" }}>
+                {String(h).padStart(2, "0")}:00
+              </div>
+            );
+          })}
+
+          {/* Grid lines */}
+          {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
+            <div key={i} style={{ position: "absolute", top: i * 60 * PX_PER_MIN, left: 0, right: 0, borderTop: `1px solid ${theme.border}`, opacity: 0.4 }} />
+          ))}
+
+          {/* Current time */}
+          {nowInRange && (
+            <div style={{ position: "absolute", top: (nowMin - startHour * 60) * PX_PER_MIN, left: -8, right: 0, zIndex: 2 }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#ef4444" }} />
+                <div style={{ flex: 1, height: 2, backgroundColor: "#ef4444" }} />
+              </div>
+            </div>
           )}
-          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-            <button onClick={() => moveItem(it.id, -1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: idx === 0 ? 0.15 : 0.4, fontSize: 10 }}>▲</button>
-            <button onClick={() => moveItem(it.id, 1)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: idx === items.length - 1 ? 0.15 : 0.4, fontSize: 10 }}>▼</button>
-            <button onClick={() => deleteItem(it.id)} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4 }}>{I.x}</button>
+
+          {/* Blocks */}
+          {blocks.map((b) => {
+            const top = (timeToMin(b.start) - startHour * 60) * PX_PER_MIN;
+            const height = Math.max((timeToMin(b.end) - timeToMin(b.start)) * PX_PER_MIN, 20);
+            const duration = timeToMin(b.end) - timeToMin(b.start);
+            return (
+              <div key={b.id} style={{ position: "absolute", top, left: 4, right: 4, height, borderRadius: 8, backgroundColor: b.color + "22", borderLeft: `3px solid ${b.color}`, padding: "4px 8px", cursor: "pointer", overflow: "hidden", zIndex: 1 }} onClick={() => startEdit(b)}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: b.color }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: theme.textSec }}>{b.start} → {b.end} · {duration >= 60 ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ""}` : `${duration}m`}</div>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }} style={{ background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 2, opacity: 0.4, flexShrink: 0 }}>{I.x}</button>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Spacer for total height */}
+          <div style={{ height: totalMin * PX_PER_MIN }} />
+        </div>
+      )}
+
+      {/* Summary */}
+      {blocks.length > 0 && (
+        <div style={{ marginTop: 16, padding: "12px", borderRadius: 10, backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: 12, color: theme.textSec }}>
+            {blocks.length} bloques · {(() => { const total = blocks.reduce((s, b) => s + timeToMin(b.end) - timeToMin(b.start), 0); return `${Math.floor(total / 60)}h ${total % 60}m estructurados`; })()}
           </div>
         </div>
-      ))}
-      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addItem(); }} placeholder="Añadir al plan..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none" }} />
-        <button onClick={addItem} style={{ padding: "10px 16px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: input.trim() ? 1 : 0.5 }}>+</button>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <button onClick={copyYesterday} style={{ flex: 1, padding: "8px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>📋 Copiar pendientes de ayer</button>
-        {!isToday && <button onClick={() => setDayOffset(0)} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 12, cursor: "pointer" }}>Hoy</button>}
-      </div>
+      )}
     </div>
   );
 }
@@ -1931,8 +1972,8 @@ export default function App() {
   const [timerView, setTimerView] = useState(null);
   const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
   const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); return s ? JSON.parse(s) : null; } catch (e) { return null; } });
-  const [dailyPlans, setDailyPlans] = useState(() => { try { const s = localStorage.getItem("task-timer-daily"); return s ? JSON.parse(s) : {}; } catch (e) { return {}; } });
-  const saveDailyPlans = (plans) => { setDailyPlans(plans); try { localStorage.setItem("task-timer-daily", JSON.stringify(plans)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { dailyPlans: plans }); };
+  const [routine, setRoutine] = useState(() => { try { const s = localStorage.getItem("task-timer-routine"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
+  const saveRoutine = (blocks) => { setRoutine(blocks); try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { routine: blocks }); };
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showStats, setShowStats] = useState(false);
@@ -2008,7 +2049,7 @@ export default function App() {
       setCat(cats); saveLocal(cats);
       if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
       if (data.habitsOrder) { setHabitsOrder(data.habitsOrder); localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); }
-      if (data.dailyPlans) { setDailyPlans(data.dailyPlans); try { localStorage.setItem("task-timer-daily", JSON.stringify(data.dailyPlans)); } catch (e) {} }
+      if (data.routine && Array.isArray(data.routine)) { setRoutine(data.routine); try { localStorage.setItem("task-timer-routine", JSON.stringify(data.routine)); } catch (e) {} }
       // Recover tags: merge cloud + local + extracted from sessions
       const cloudTags = data.tags && data.tags.length > 0 ? data.tags : [];
       const localTags = tagsRef.current || [];
@@ -2045,7 +2086,7 @@ export default function App() {
       if (data.tags && data.tags.length > 0) { setTags(data.tags); saveTags(data.tags); }
       if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
       if (data.habitsOrder !== undefined) { setHabitsOrder(data.habitsOrder && data.habitsOrder.length > 0 ? data.habitsOrder : null); try { if (data.habitsOrder?.length > 0) localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} }
-      if (data.dailyPlans) { setDailyPlans(data.dailyPlans); try { localStorage.setItem("task-timer-daily", JSON.stringify(data.dailyPlans)); } catch (e) {} }
+      if (data.routine && Array.isArray(data.routine)) { setRoutine(data.routine); try { localStorage.setItem("task-timer-routine", JSON.stringify(data.routine)); } catch (e) {} }
       // Check if remote stopped/started a timer
       let remoteRunning = null;
       for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) { remoteRunning = t; break; } } if (remoteRunning) break; }
@@ -3069,12 +3110,12 @@ export default function App() {
         {/* Categories */}
         {/* View tabs */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border}` }}>
-          {[{ key: "tasks", label: "Tareas" }, { key: "daily", label: "Día a día" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }, { key: "calendar", label: "📅" }].map((v) => (
+          {[{ key: "tasks", label: "Tareas" }, { key: "kanban", label: "Kanban" }, { key: "habits", label: "Hábitos" }, { key: "routine", label: "Rutina" }, { key: "calendar", label: "📅" }].map((v) => (
             <button key={v.key} onClick={() => setMainView(v.key)} style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: mainView === v.key ? `2px solid ${theme.accent}` : "2px solid transparent", color: mainView === v.key ? theme.text : theme.textSec, fontSize: 14, fontWeight: mainView === v.key ? 600 : 400, cursor: "pointer" }}>{v.label}</button>
           ))}
         </div>
 
-        {mainView === "daily" && <DailyView dailyPlans={dailyPlans} onSave={saveDailyPlans} categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
+        {mainView === "routine" && <RoutineView routine={routine} onSave={saveRoutine} theme={theme} dk={dk} />}
         {mainView === "kanban" && <KanbanView categories={categories} onUpdate={update} onTimerView={(id) => setTimerView(id)} activeId={activeId} elapsed={elapsed} theme={theme} dk={dk} focusPanel={focusPanel} addToFocus={addToFocus} removeFromFocus={removeFromFocus} onStopTimer={(id) => { if (activeId === id) { clearInterval(intRef.current); finishStop(id, null); } }} />}
         {mainView === "habits" && <HabitsView categories={categories} onUpdate={update} theme={theme} dk={dk} colOrder={habitsOrder} onColOrderChange={saveHabitsOrder} />}
         {mainView === "calendar" && <CalendarView categories={categories} onTimerView={(id) => setTimerView(id)} theme={theme} dk={dk} />}
