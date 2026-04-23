@@ -258,7 +258,7 @@ function useCloudSync(user) {
     return { categories: backup.categories, tags: backup.tags };
   }, [user]);
 
-  return { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup };
+  return { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup, routineRef, focusPanelRef, habitsOrderRef2, lastSaveTs };
 }
 
 // ─── Profile Menu ──────────────────────────────────────
@@ -2245,7 +2245,7 @@ function AppInner() {
   catsRef.current = categories;
   tagsRef.current = tags;
 
-  const { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup } = useCloudSync(user);
+  const { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup, routineRef, focusPanelRef, habitsOrderRef2, lastSaveTs } = useCloudSync(user);
 
   // ─── Auth ──────────────────────────────────────────
   useEffect(() => {
