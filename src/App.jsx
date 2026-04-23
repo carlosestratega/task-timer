@@ -2182,22 +2182,6 @@ function AppInner() {
   const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); const r = s ? JSON.parse(s) : []; focusPanelRef.current = r; return r; } catch (e) { return []; } });
   const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); const r = s ? JSON.parse(s) : null; habitsOrderRef2.current = r || []; return r; } catch (e) { return null; } });
   const [routine, setRoutine] = useState(() => { try { const s = localStorage.getItem("task-timer-routine"); const r = s ? JSON.parse(s) : []; routineRef.current = r; return r; } catch (e) { return []; } });
-  const cloudSave = useCallback(() => {
-    if (!user || !initDone.current) return;
-    if (saveRef.current) clearTimeout(saveRef.current);
-    saveRef.current = setTimeout(() => saveToCloud(catsRef.current, tagsRef.current), 1500);
-  }, [user, saveToCloud]);
-
-  const saveRoutine = (blocks) => {
-    setRoutine(blocks);
-    routineRef.current = blocks;
-    try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {}
-    // Direct immediate save - no debounce for routine
-    if (user && initDone.current) {
-      if (saveRef.current) clearTimeout(saveRef.current);
-      saveRef.current = setTimeout(() => saveToCloud(catsRef.current, tagsRef.current), 300);
-    }
-  };
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showStats, setShowStats] = useState(false);
@@ -2237,6 +2221,22 @@ function AppInner() {
   tagsRef.current = tags;
 
   const { saveToCloud, loadFromCloud, syncing, remoteCallbackRef, saveBackup, listBackups, restoreBackup, routineRef, focusPanelRef, habitsOrderRef2, lastSaveTs } = useCloudSync(user);
+
+  const cloudSave = useCallback(() => {
+    if (!user || !initDone.current) return;
+    if (saveRef.current) clearTimeout(saveRef.current);
+    saveRef.current = setTimeout(() => saveToCloud(catsRef.current, tagsRef.current), 1500);
+  }, [user, saveToCloud]);
+
+  const saveRoutine = (blocks) => {
+    setRoutine(blocks);
+    routineRef.current = blocks;
+    try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {}
+    if (user && initDone.current) {
+      if (saveRef.current) clearTimeout(saveRef.current);
+      saveRef.current = setTimeout(() => saveToCloud(catsRef.current, tagsRef.current), 300);
+    }
+  };
 
   // ─── Auth ──────────────────────────────────────────
   useEffect(() => {
