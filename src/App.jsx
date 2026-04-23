@@ -187,6 +187,10 @@ function useCloudSync(user) {
     return () => { if (unsubRef.current) unsubRef.current(); };
   }, [user]);
 
+  const routineRef = useRef([]);
+  const focusPanelRef = useRef([]);
+  const habitsOrderRef2 = useRef(null);
+
   const saveToCloud = useCallback(async (cats, tgs, extras) => {
     if (!user) return;
     setSyncing(true);
@@ -194,8 +198,20 @@ function useCloudSync(user) {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
       const now = new Date().toISOString();
       lastSaveTs.current = new Date(now).getTime();
-      const payload = { categories: clean, tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []), updatedAt: now, _device: DEVICE_ID };
-      if (extras) { if (extras.focusPanel !== undefined) payload.focusPanel = extras.focusPanel; if (extras.habitsOrder !== undefined) payload.habitsOrder = extras.habitsOrder; if (extras.routine !== undefined) payload.routine = extras.routine; }
+      const payload = {
+        categories: clean,
+        tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []),
+        updatedAt: now,
+        _device: DEVICE_ID,
+        routine: routineRef.current || [],
+        focusPanel: focusPanelRef.current || [],
+        habitsOrder: habitsOrderRef2.current || [],
+      };
+      if (extras) {
+        if (extras.focusPanel !== undefined) { payload.focusPanel = extras.focusPanel; focusPanelRef.current = extras.focusPanel; }
+        if (extras.habitsOrder !== undefined) { payload.habitsOrder = extras.habitsOrder; habitsOrderRef2.current = extras.habitsOrder; }
+        if (extras.routine !== undefined) { payload.routine = extras.routine; routineRef.current = extras.routine; }
+      }
       await setDoc(doc(db, "users", user.uid), payload);
     } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
@@ -2168,10 +2184,10 @@ function AppInner() {
   const [newCatName, setNewCatName] = useState("");
   const [newTaskName, setNewTaskName] = useState("");
   const [timerView, setTimerView] = useState(null);
-  const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
-  const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); return s ? JSON.parse(s) : null; } catch (e) { return null; } });
-  const [routine, setRoutine] = useState(() => { try { const s = localStorage.getItem("task-timer-routine"); return s ? JSON.parse(s) : []; } catch (e) { return []; } });
-  const saveRoutine = (blocks) => { setRoutine(blocks); try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { routine: blocks }); };
+  const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); const r = s ? JSON.parse(s) : []; focusPanelRef.current = r; return r; } catch (e) { return []; } });
+  const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); const r = s ? JSON.parse(s) : null; habitsOrderRef2.current = r || []; return r; } catch (e) { return null; } });
+  const [routine, setRoutine] = useState(() => { try { const s = localStorage.getItem("task-timer-routine"); const r = s ? JSON.parse(s) : []; routineRef.current = r; return r; } catch (e) { return []; } });
+  const saveRoutine = (blocks) => { setRoutine(blocks); routineRef.current = blocks; try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { routine: blocks }); };
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showStats, setShowStats] = useState(false);
@@ -2245,9 +2261,9 @@ function AppInner() {
       // Always load from cloud (source of truth)
       const cats = data.categories.map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats);
-      if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
-      if (data.habitsOrder) { setHabitsOrder(data.habitsOrder); localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); }
-      if (data.routine && Array.isArray(data.routine)) { setRoutine(data.routine); try { localStorage.setItem("task-timer-routine", JSON.stringify(data.routine)); } catch (e) {} }
+      if (data.focusPanel) { setFocusPanel(data.focusPanel); focusPanelRef.current = data.focusPanel; localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
+      if (data.habitsOrder) { setHabitsOrder(data.habitsOrder); habitsOrderRef2.current = data.habitsOrder; localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); }
+      if (data.routine && Array.isArray(data.routine)) { setRoutine(data.routine); routineRef.current = data.routine; try { localStorage.setItem("task-timer-routine", JSON.stringify(data.routine)); } catch (e) {} }
       // Recover tags: merge cloud + local + extracted from sessions
       const cloudTags = data.tags && data.tags.length > 0 ? data.tags : [];
       const localTags = tagsRef.current || [];
@@ -2282,9 +2298,9 @@ function AppInner() {
       const cats = (data.categories || []).map((c) => ({ ...c, tasks: c.tasks.map(ensureTask) }));
       setCat(cats); saveLocal(cats);
       if (data.tags && data.tags.length > 0) { setTags(data.tags); saveTags(data.tags); }
-      if (data.focusPanel) { setFocusPanel(data.focusPanel); localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
-      if (data.habitsOrder !== undefined) { setHabitsOrder(data.habitsOrder && data.habitsOrder.length > 0 ? data.habitsOrder : null); try { if (data.habitsOrder?.length > 0) localStorage.setItem("task-timer-habits-order", JSON.stringify(data.habitsOrder)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} }
-      if (data.routine && Array.isArray(data.routine)) { setRoutine(data.routine); try { localStorage.setItem("task-timer-routine", JSON.stringify(data.routine)); } catch (e) {} }
+      if (data.focusPanel) { setFocusPanel(data.focusPanel); focusPanelRef.current = data.focusPanel; localStorage.setItem("task-timer-focus", JSON.stringify(data.focusPanel)); }
+      if (data.habitsOrder !== undefined) { const ho = data.habitsOrder && data.habitsOrder.length > 0 ? data.habitsOrder : null; setHabitsOrder(ho); habitsOrderRef2.current = ho || []; try { if (ho) localStorage.setItem("task-timer-habits-order", JSON.stringify(ho)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} }
+      if (data.routine && Array.isArray(data.routine)) { setRoutine(data.routine); routineRef.current = data.routine; try { localStorage.setItem("task-timer-routine", JSON.stringify(data.routine)); } catch (e) {} }
       // Check if remote stopped/started a timer
       let remoteRunning = null;
       for (const c of cats) { for (const t of c.tasks) { if (t.isRunning && t.startedAt) { remoteRunning = t; break; } } if (remoteRunning) break; }
@@ -2530,8 +2546,8 @@ function AppInner() {
   };
 
   const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
-  const saveFocus = (arr) => { setFocusPanel(arr); try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { focusPanel: arr }); };
-  const saveHabitsOrder = (arr) => { setHabitsOrder(arr); try { if (arr) localStorage.setItem("task-timer-habits-order", JSON.stringify(arr)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { habitsOrder: arr || [] }); };
+  const saveFocus = (arr) => { setFocusPanel(arr); focusPanelRef.current = arr; try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { focusPanel: arr }); };
+  const saveHabitsOrder = (arr) => { setHabitsOrder(arr); habitsOrderRef2.current = arr || []; try { if (arr) localStorage.setItem("task-timer-habits-order", JSON.stringify(arr)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {} if (user) saveToCloud(catsRef.current, tagsRef.current, { habitsOrder: arr || [] }); };
   const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-7); saveFocus(next); };
   const removeFromFocus = (id) => { saveFocus(focusPanel.filter((x) => x !== id)); };
   const switchFocus = (id) => {
