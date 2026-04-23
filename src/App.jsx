@@ -178,10 +178,8 @@ function useCloudSync(user) {
       if (isFirst) { isFirst = false; return; }
       if (!snap.exists()) return;
       const data = snap.data();
-      // Ignore own writes: if device matches OR if update came within 2s of our save
+      // Ignore own writes only by device ID
       if (data._device === DEVICE_ID) return;
-      const cloudTs = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
-      if (Math.abs(cloudTs - lastSaveTs.current) < 2000) return;
       if (remoteCallbackRef.current) remoteCallbackRef.current(data);
     }, (err) => console.warn("Firestore:", err));
     return () => { if (unsubRef.current) unsubRef.current(); };
