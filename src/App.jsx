@@ -2187,24 +2187,28 @@ function AppInner() {
   const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); const r = s ? JSON.parse(s) : []; focusPanelRef.current = r; return r; } catch (e) { return []; } });
   const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); const r = s ? JSON.parse(s) : null; habitsOrderRef2.current = r || []; return r; } catch (e) { return null; } });
   const [routine, setRoutine] = useState(() => { try { const s = localStorage.getItem("task-timer-routine"); const r = s ? JSON.parse(s) : []; routineRef.current = r; return r; } catch (e) { return []; } });
-  const saveRoutine = async (blocks) => {
+  const routineSaveTimer = useRef(null);
+  const saveRoutine = (blocks) => {
     setRoutine(blocks);
     routineRef.current = blocks;
     try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {}
     if (user) {
-      try {
-        const now = new Date().toISOString();
-        lastSaveTs.current = new Date(now).getTime();
-        await setDoc(doc(db, "users", user.uid), {
-          categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })),
-          tags: tagsRef.current || [],
-          routine: blocks,
-          focusPanel: focusPanelRef.current || [],
-          habitsOrder: habitsOrderRef2.current || [],
-          updatedAt: now,
-          _device: DEVICE_ID,
-        });
-      } catch (e) { console.warn("Routine save error:", e); }
+      if (routineSaveTimer.current) clearTimeout(routineSaveTimer.current);
+      routineSaveTimer.current = setTimeout(async () => {
+        try {
+          const now = new Date().toISOString();
+          lastSaveTs.current = new Date(now).getTime();
+          await setDoc(doc(db, "users", user.uid), {
+            categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })),
+            tags: tagsRef.current || [],
+            routine: routineRef.current || [],
+            focusPanel: focusPanelRef.current || [],
+            habitsOrder: habitsOrderRef2.current || [],
+            updatedAt: now,
+            _device: DEVICE_ID,
+          });
+        } catch (e) { console.warn("Routine save error:", e); }
+      }, 800);
     }
   };
   const [modal, setModal] = useState(null);
@@ -2565,24 +2569,32 @@ function AppInner() {
   };
 
   const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
-  const saveFocus = async (arr) => {
+  const focusSaveTimer = useRef(null);
+  const saveFocus = (arr) => {
     setFocusPanel(arr); focusPanelRef.current = arr;
     try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {}
     if (user) {
-      try {
-        const now = new Date().toISOString(); lastSaveTs.current = new Date(now).getTime();
-        await setDoc(doc(db, "users", user.uid), { categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })), tags: tagsRef.current || [], routine: routineRef.current || [], focusPanel: arr, habitsOrder: habitsOrderRef2.current || [], updatedAt: now, _device: DEVICE_ID });
-      } catch (e) { console.warn("Focus save error:", e); }
+      if (focusSaveTimer.current) clearTimeout(focusSaveTimer.current);
+      focusSaveTimer.current = setTimeout(async () => {
+        try {
+          const now = new Date().toISOString(); lastSaveTs.current = new Date(now).getTime();
+          await setDoc(doc(db, "users", user.uid), { categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })), tags: tagsRef.current || [], routine: routineRef.current || [], focusPanel: focusPanelRef.current || [], habitsOrder: habitsOrderRef2.current || [], updatedAt: now, _device: DEVICE_ID });
+        } catch (e) { console.warn("Focus save error:", e); }
+      }, 800);
     }
   };
-  const saveHabitsOrder = async (arr) => {
+  const habitsSaveTimer = useRef(null);
+  const saveHabitsOrder = (arr) => {
     setHabitsOrder(arr); habitsOrderRef2.current = arr || [];
     try { if (arr) localStorage.setItem("task-timer-habits-order", JSON.stringify(arr)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {}
     if (user) {
-      try {
-        const now = new Date().toISOString(); lastSaveTs.current = new Date(now).getTime();
-        await setDoc(doc(db, "users", user.uid), { categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })), tags: tagsRef.current || [], routine: routineRef.current || [], focusPanel: focusPanelRef.current || [], habitsOrder: arr || [], updatedAt: now, _device: DEVICE_ID });
-      } catch (e) { console.warn("HabitsOrder save error:", e); }
+      if (habitsSaveTimer.current) clearTimeout(habitsSaveTimer.current);
+      habitsSaveTimer.current = setTimeout(async () => {
+        try {
+          const now = new Date().toISOString(); lastSaveTs.current = new Date(now).getTime();
+          await setDoc(doc(db, "users", user.uid), { categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })), tags: tagsRef.current || [], routine: routineRef.current || [], focusPanel: focusPanelRef.current || [], habitsOrder: habitsOrderRef2.current || [], updatedAt: now, _device: DEVICE_ID });
+        } catch (e) { console.warn("HabitsOrder save error:", e); }
+      }, 800);
     }
   };
   const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-7); saveFocus(next); };
