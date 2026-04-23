@@ -189,14 +189,14 @@ function useCloudSync(user) {
   const focusPanelRef = useRef([]);
   const habitsOrderRef2 = useRef(null);
 
-  const saveToCloud = useCallback(async (cats, tgs, extras) => {
+  const saveToCloud = useCallback(async (cats, tgs) => {
     if (!user) return;
     setSyncing(true);
     try {
       const clean = cats.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) }));
       const now = new Date().toISOString();
       lastSaveTs.current = new Date(now).getTime();
-      const payload = {
+      await setDoc(doc(db, "users", user.uid), {
         categories: clean,
         tags: (tgs && tgs.length > 0) ? tgs : (loadTags() || []),
         updatedAt: now,
@@ -204,13 +204,7 @@ function useCloudSync(user) {
         routine: routineRef.current || [],
         focusPanel: focusPanelRef.current || [],
         habitsOrder: habitsOrderRef2.current || [],
-      };
-      if (extras) {
-        if (extras.focusPanel !== undefined) { payload.focusPanel = extras.focusPanel; focusPanelRef.current = extras.focusPanel; }
-        if (extras.habitsOrder !== undefined) { payload.habitsOrder = extras.habitsOrder; habitsOrderRef2.current = extras.habitsOrder; }
-        if (extras.routine !== undefined) { payload.routine = extras.routine; routineRef.current = extras.routine; }
-      }
-      await setDoc(doc(db, "users", user.uid), payload);
+      });
     } catch (e) { console.warn("Save:", e); }
     setSyncing(false);
   }, [user]);
@@ -2188,29 +2182,11 @@ function AppInner() {
   const [focusPanel, setFocusPanel] = useState(() => { try { const s = localStorage.getItem("task-timer-focus"); const r = s ? JSON.parse(s) : []; focusPanelRef.current = r; return r; } catch (e) { return []; } });
   const [habitsOrder, setHabitsOrder] = useState(() => { try { const s = localStorage.getItem("task-timer-habits-order"); const r = s ? JSON.parse(s) : null; habitsOrderRef2.current = r || []; return r; } catch (e) { return null; } });
   const [routine, setRoutine] = useState(() => { try { const s = localStorage.getItem("task-timer-routine"); const r = s ? JSON.parse(s) : []; routineRef.current = r; return r; } catch (e) { return []; } });
-  const routineSaveTimer = useRef(null);
   const saveRoutine = (blocks) => {
     setRoutine(blocks);
     routineRef.current = blocks;
     try { localStorage.setItem("task-timer-routine", JSON.stringify(blocks)); } catch (e) {}
-    if (user) {
-      if (routineSaveTimer.current) clearTimeout(routineSaveTimer.current);
-      routineSaveTimer.current = setTimeout(async () => {
-        try {
-          const now = new Date().toISOString();
-          lastSaveTs.current = new Date(now).getTime();
-          await setDoc(doc(db, "users", user.uid), {
-            categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })),
-            tags: tagsRef.current || [],
-            routine: routineRef.current || [],
-            focusPanel: focusPanelRef.current || [],
-            habitsOrder: habitsOrderRef2.current || [],
-            updatedAt: now,
-            _device: DEVICE_ID,
-          });
-        } catch (e) { console.warn("Routine save error:", e); }
-      }, 800);
-    }
+    if (user) cloudSave();
   };
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
@@ -2309,7 +2285,7 @@ function AppInner() {
         const zombieIds = runningTasks.filter((r) => r.task.id !== best.task.id || el <= 0 || el >= 86400).map((r) => r.task.id);
         if (zombieIds.length > 0 || (el <= 0 || el >= 86400)) {
           const cleanIds = el <= 0 || el >= 86400 ? [...zombieIds, best.task.id] : zombieIds;
-          setCat((p) => { const next = p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => cleanIds.includes(tk.id) ? { ...tk, isRunning: false, startedAt: null } : tk) })); saveLocal(next); cloudSave(next, tagsRef.current); return next; });
+          setCat((p) => { const next = p.map((cat) => ({ ...cat, tasks: cat.tasks.map((tk) => cleanIds.includes(tk.id) ? { ...tk, isRunning: false, startedAt: null } : tk) })); saveLocal(next); catsRef.current = next; cloudSave(); return next; });
         }
       }
     });
@@ -2340,10 +2316,10 @@ function AppInner() {
   }, []);
 
   // ─── Save to cloud on real changes (debounced) ─────
-  const cloudSave = useCallback((cats, tgs) => {
+  const cloudSave = useCallback(() => {
     if (!user || !initDone.current) return;
     if (saveRef.current) clearTimeout(saveRef.current);
-    saveRef.current = setTimeout(() => saveToCloud(cats, tgs), 1500);
+    saveRef.current = setTimeout(() => saveToCloud(catsRef.current, tagsRef.current), 1500);
   }, [user, saveToCloud]);
 
   // ─── Auto backup every 6 hours ──────────────────────
@@ -2450,7 +2426,7 @@ function AppInner() {
           setCat((prev) => {
             const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === nfcId ? { ...t, isRunning: true, startedAt: now } : t) }));
             saveLocal(next);
-            cloudSave(next, tagsRef.current);
+            catsRef.current = next; cloudSave();
             return next;
           });
           setActiveId(nfcId);
@@ -2541,7 +2517,7 @@ function AppInner() {
         return t.id === id ? { ...t, isRunning: false, startedAt: null } : t;
       }) }));
       saveLocal(next);
-      cloudSave(next, tagsRef.current);
+      catsRef.current = next; cloudSave();
       return next;
     });
     setActiveId(null);
@@ -2562,7 +2538,7 @@ function AppInner() {
     setCat((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, startedAt: now } : t) }));
       saveLocal(next);
-      cloudSave(next, tagsRef.current);
+      catsRef.current = next; cloudSave();
       return next;
     });
     setActiveId(id);
@@ -2570,33 +2546,15 @@ function AppInner() {
   };
 
   const toggleTimer = (id) => { if (activeId === id) doStop(id); else doStart(id); };
-  const focusSaveTimer = useRef(null);
   const saveFocus = (arr) => {
     setFocusPanel(arr); focusPanelRef.current = arr;
     try { localStorage.setItem("task-timer-focus", JSON.stringify(arr)); } catch (e) {}
-    if (user) {
-      if (focusSaveTimer.current) clearTimeout(focusSaveTimer.current);
-      focusSaveTimer.current = setTimeout(async () => {
-        try {
-          const now = new Date().toISOString(); lastSaveTs.current = new Date(now).getTime();
-          await setDoc(doc(db, "users", user.uid), { categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })), tags: tagsRef.current || [], routine: routineRef.current || [], focusPanel: focusPanelRef.current || [], habitsOrder: habitsOrderRef2.current || [], updatedAt: now, _device: DEVICE_ID });
-        } catch (e) { console.warn("Focus save error:", e); }
-      }, 800);
-    }
+    if (user) cloudSave();
   };
-  const habitsSaveTimer = useRef(null);
   const saveHabitsOrder = (arr) => {
     setHabitsOrder(arr); habitsOrderRef2.current = arr || [];
     try { if (arr) localStorage.setItem("task-timer-habits-order", JSON.stringify(arr)); else localStorage.removeItem("task-timer-habits-order"); } catch (e) {}
-    if (user) {
-      if (habitsSaveTimer.current) clearTimeout(habitsSaveTimer.current);
-      habitsSaveTimer.current = setTimeout(async () => {
-        try {
-          const now = new Date().toISOString(); lastSaveTs.current = new Date(now).getTime();
-          await setDoc(doc(db, "users", user.uid), { categories: catsRef.current.map((c) => ({ ...c, tasks: c.tasks.map((t) => ensureTask(t)) })), tags: tagsRef.current || [], routine: routineRef.current || [], focusPanel: focusPanelRef.current || [], habitsOrder: habitsOrderRef2.current || [], updatedAt: now, _device: DEVICE_ID });
-        } catch (e) { console.warn("HabitsOrder save error:", e); }
-      }, 800);
-    }
+    if (user) cloudSave();
   };
   const addToFocus = (id) => { if (focusPanel.includes(id)) return; const next = [...focusPanel, id].slice(-7); saveFocus(next); };
   const removeFromFocus = (id) => { saveFocus(focusPanel.filter((x) => x !== id)); };
@@ -2609,7 +2567,7 @@ function AppInner() {
     setCat((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: c.tasks.map((t) => t.id === id ? { ...t, isRunning: true, startedAt: now } : t) }));
       saveLocal(next);
-      cloudSave(next, tagsRef.current);
+      catsRef.current = next; cloudSave();
       return next;
     });
     setActiveId(id);
@@ -2621,7 +2579,7 @@ function AppInner() {
     setCat((prev) => {
       const next = fn(prev);
       saveLocal(next);
-      cloudSave(next, tagsRef.current);
+      catsRef.current = next; cloudSave();
       return next;
     });
   };
@@ -2629,7 +2587,7 @@ function AppInner() {
     setTags((prev) => {
       const next = fn(prev);
       saveTags(next);
-      cloudSave(catsRef.current, next);
+      tagsRef.current = next; cloudSave();
       return next;
     });
   };
