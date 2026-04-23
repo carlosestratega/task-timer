@@ -819,6 +819,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const changeFontSize = (delta) => { setFontSize((s) => { const n = Math.max(10, Math.min(20, s + delta)); try { localStorage.setItem("task-timer-routine-font", String(n)); } catch (e) {} return n; }); };
   const latestRoutine = useRef(routine);
   latestRoutine.current = routine;
+  const doSave = (newBlocks) => { latestRoutine.current = newBlocks; onSave(newBlocks); };
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
   const toHex = (o) => { const v = Math.round((parseFloat(o) || 0.13) * 255); return Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"); };
   const blocks = [...(routine || [])].sort((a, b) => a.start.localeCompare(b.start));
@@ -832,10 +833,10 @@ function RoutineView({ routine, onSave, theme, dk }) {
   const addSub = () => { if (!subInput.trim()) return; setSubs([...subs, { id: `rs-${Date.now()}`, text: subInput.trim() }]); setSubInput(""); };
   const removeSub = (id) => setSubs(subs.filter((s) => s.id !== id));
 
-  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined, opacity }; onSave([...(latestRoutine.current || []), b]); resetForm(); };
-  const deleteBlock = (id) => onSave((latestRoutine.current || []).filter((b) => b.id !== id));
+  const addBlock = () => { if (!name.trim()) return; const b = { id: `rb-${Date.now()}`, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined, opacity }; doSave([...(latestRoutine.current || []), b]); resetForm(); };
+  const deleteBlock = (id) => doSave((latestRoutine.current || []).filter((b) => b.id !== id));
   const startEdit = (b) => { setEditId(b.id); setName(b.name); setStart(b.start); setEnd(b.end); setColor(b.color); setEmoji(b.emoji || ""); setSubs(b.subs || []); setOpacity(b.opacity !== undefined ? b.opacity : 0.13); setAdding(false); };
-  const saveEdit = () => { onSave((latestRoutine.current || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined, opacity } : b)); resetForm(); };
+  const saveEdit = () => { doSave((latestRoutine.current || []).map((b) => b.id === editId ? { ...b, name: name.trim(), start, end, color, emoji: emoji || null, subs: subs.length > 0 ? subs : undefined, opacity } : b)); resetForm(); };
   const resetForm = () => { setEditId(null); setAdding(false); setName(""); setEmoji(""); setSubs([]); setSubInput(""); setOpacity(0.13); };
 
   // Bulk paste: format "09:00-10:00 🏋️ Deporte\n- Calentamiento\n- Pesas"
@@ -873,7 +874,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
       }
     });
     if (current) newBlocks.push(current);
-    if (newBlocks.length > 0) { onSave([...(latestRoutine.current || []), ...newBlocks]); setPasteText(""); setShowPaste(false); }
+    if (newBlocks.length > 0) { doSave([...(latestRoutine.current || []), ...newBlocks]); setPasteText(""); setShowPaste(false); }
   };
 
   const now = new Date();
@@ -939,7 +940,7 @@ function RoutineView({ routine, onSave, theme, dk }) {
         <button onClick={() => changeFontSize(-1)} style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>A−</button>
         <button onClick={() => setShowSubs(!showSubs)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${showSubs ? "#6366f1" : theme.border}`, background: showSubs ? "#6366f122" : "none", color: showSubs ? "#6366f1" : theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>📝 {showSubs ? "Ocultar" : "Ver notas"}</button>
         <button onClick={() => { setShowPaste(!showPaste); resetForm(); }} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${theme.border}`, background: showPaste ? theme.surface : "none", color: theme.textSec, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>📋 Pegar</button>
-        {blocks.length > 0 && <button onClick={() => onSave([])} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>🗑️ Borrar todo</button>}
+        {blocks.length > 0 && <button onClick={() => doSave([])} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ef4444", background: "none", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>🗑️ Borrar todo</button>}
       </div>
 
       {showPaste && (
