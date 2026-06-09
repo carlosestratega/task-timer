@@ -3011,10 +3011,9 @@ function AppInner() {
         const isActive = activeId === timerView;
         const displaySecs = isActive ? elapsed : 0;
         return (
-          <div style={{ position: "fixed", inset: 0, backgroundColor: dk ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(20px)", zIndex: 100, display: "flex", flexDirection: "column", animation: "fadeIn .25s" }}>
-            <button onClick={() => { setTimerView(null); setEditingTaskName(false); }} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: theme.textSec, cursor: "pointer", padding: 10, zIndex: 2 }}>{I.x}</button>
-            {/* Fixed top */}
-            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 20px 24px" }}>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: dk ? "rgba(0,0,0,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(20px)", zIndex: 100, overflow: "auto", WebkitOverflowScrolling: "touch", animation: "fadeIn .25s" }}>
+            <button onClick={() => { setTimerView(null); setEditingTaskName(false); }} style={{ position: "sticky", top: 12, float: "right", marginRight: 12, background: dk ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.8)", border: "none", color: theme.textSec, cursor: "pointer", padding: 10, zIndex: 2, borderRadius: 20 }}>{I.x}</button>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "50px 20px 24px" }}>
               <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: c.color, marginBottom: 12, opacity: 0.8 }} />
               <div style={{ fontSize: 13, color: theme.textSec, textTransform: "uppercase", letterSpacing: 2, marginBottom: 4 }}>{c.name}</div>
               {editingTaskName ? (
@@ -3070,8 +3069,7 @@ function AppInner() {
                 <button onClick={() => addToFocus(timerView)} style={{ marginTop: focusPanel.length > 0 ? 8 : 14, display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${theme.border}`, borderRadius: 10, color: theme.textSec, cursor: "pointer", padding: "6px 14px", fontSize: 12 }}>{I.pin} Fijar al foco</button>
               )}
             </div>
-            {/* Scrollable content */}
-            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px 40px", WebkitOverflowScrolling: "touch" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px 100px" }}>
 
             {/* Goal */}
             {t.goalDaily > 0 && (
