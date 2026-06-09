@@ -296,7 +296,7 @@ function ProfileMenu({ user, onLogin, onLogout, onBackups, onExport, onImport, f
 function Modal({ title, message, confirmLabel, confirmColor, onConfirm, onCancel, theme, children, options }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s" }} onClick={onCancel}>
-      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 24, maxWidth: 380, width: "100%" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 24, maxWidth: 380, width: "100%", maxHeight: "85vh", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
         <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>{title}</div>
         {message && <div style={{ fontSize: 14, color: theme.textSec, marginBottom: 16, lineHeight: 1.5 }}>{message}</div>}
         {options && (
@@ -418,6 +418,7 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
   const [note, setNote] = useState(session.note || "");
   const [mood, setMood] = useState(session.mood || null);
   const [sessTags, setSessTags] = useState(session.tags || []);
+  const [showAllTags, setShowAllTags] = useState(false);
   const durH = Math.floor((session.duration || 0) / 3600);
   const durM = Math.floor(((session.duration || 0) % 3600) / 60);
   const durS = (session.duration || 0) % 60;
@@ -469,8 +470,13 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
     setStartTime(`${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`);
   };
   return (
-    <Modal title="Editar sesión" onCancel={onCancel} theme={theme}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 200, overflow: "auto", WebkitOverflowScrolling: "touch", animation: "fadeIn .2s" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", padding: "0 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "20px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
+          <button onClick={onCancel} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Editar sesión</h2>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "16px 0 100px" }}>
         <div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha</div>
           <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
@@ -516,16 +522,22 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
             ))}
           </div>
         </div>
-        {allTags && allTags.length > 0 && (
-          <div>
-            <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Etiquetas</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {allTags.map((tag) => (
-                <button key={tag} onClick={() => toggleTag(tag)} style={{ padding: "5px 12px", borderRadius: 16, border: sessTags.includes(tag) ? "2px solid #6366f1" : `1px solid ${theme.border}`, backgroundColor: sessTags.includes(tag) ? "#6366f122" : "transparent", color: sessTags.includes(tag) ? "#6366f1" : theme.textSec, fontSize: 13, cursor: "pointer" }}>{tag}</button>
-              ))}
+        {allTags && allTags.length > 0 && (() => {
+          const visibleTags = showAllTags ? allTags : [...sessTags, ...allTags.filter((t) => !sessTags.includes(t)).slice(0, Math.max(0, 3 - sessTags.length))];
+          return (
+            <div>
+              <div onClick={() => setShowAllTags(!showAllTags)} style={{ fontSize: 13, color: theme.textSec, marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                <span>Etiquetas{sessTags.length > 0 ? ` (${sessTags.length})` : ""}</span>
+                <span style={{ fontSize: 11 }}>{showAllTags ? "▲ menos" : `▼ ver ${allTags.length}`}</span>
+              </div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {visibleTags.map((tag) => (
+                  <button key={tag} onClick={() => toggleTag(tag)} style={{ padding: "3px 9px", borderRadius: 14, border: sessTags.includes(tag) ? "2px solid #6366f1" : `1px solid ${theme.border}`, backgroundColor: sessTags.includes(tag) ? "#6366f122" : "transparent", color: sessTags.includes(tag) ? "#6366f1" : theme.textSec, fontSize: 11, cursor: "pointer" }}>{tag}</button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
         <div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Nota</div>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="¿Qué hiciste?" rows={2} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 14, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
@@ -541,7 +553,8 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
           }} style={{ padding: "10px 18px", borderRadius: 10, border: "none", backgroundColor: "#6366f1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
         </div>
       </div>
-    </Modal>
+      </div>
+    </div>
   );
 }
 
@@ -3228,16 +3241,19 @@ function AppInner() {
         const togglePendingTag = (tag) => setPendingTags((p) => p.includes(tag) ? p.filter((t) => t !== tag) : [...p, tag]);
         return (
           <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s" }} onClick={() => finishStop(pendingStop.id, null)}>
-            <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "28px 24px", maxWidth: 380, width: "100%", textAlign: "center" }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "28px 24px", maxWidth: 380, width: "100%", maxHeight: "85vh", overflowY: "auto", textAlign: "center" }}>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>¿Cómo te ha ido?</div>
               <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>{pt?.name || ""} · {fmtShort(pendingStop.duration)}</div>
               {/* Tags */}
               {tags.length > 0 && (
                 <div style={{ margin: "16px 0", textAlign: "left" }}>
-                  <div style={{ fontSize: 11, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Mientras tanto...</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {tags.map((tag) => (
-                      <button key={tag} onClick={() => togglePendingTag(tag)} style={{ padding: "5px 14px", borderRadius: 20, border: pendingTags.includes(tag) ? `2px solid ${pc?.color || "#6366f1"}` : `1px solid ${theme.border}`, backgroundColor: pendingTags.includes(tag) ? `${pc?.color || "#6366f1"}15` : "transparent", color: pendingTags.includes(tag) ? (pc?.color || "#6366f1") : theme.textSec, fontSize: 13, fontWeight: pendingTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>{tag}</button>
+                  <div onClick={() => setShowAllTags(!showAllTags)} style={{ fontSize: 11, color: theme.textSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                    <span>Mientras tanto...{pendingTags.length > 0 ? ` (${pendingTags.length})` : ""}</span>
+                    <span style={{ textTransform: "none" }}>{showAllTags ? "▲" : `▼ ${tags.length}`}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {(showAllTags ? tags : [...pendingTags, ...tags.filter((t) => !pendingTags.includes(t)).slice(0, Math.max(0, 3 - pendingTags.length))]).map((tag) => (
+                      <button key={tag} onClick={() => togglePendingTag(tag)} style={{ padding: "4px 12px", borderRadius: 20, border: pendingTags.includes(tag) ? `2px solid ${pc?.color || "#6366f1"}` : `1px solid ${theme.border}`, backgroundColor: pendingTags.includes(tag) ? `${pc?.color || "#6366f1"}15` : "transparent", color: pendingTags.includes(tag) ? (pc?.color || "#6366f1") : theme.textSec, fontSize: 12, fontWeight: pendingTags.includes(tag) ? 600 : 400, cursor: "pointer" }}>{tag}</button>
                     ))}
                   </div>
                 </div>
