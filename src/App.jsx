@@ -470,13 +470,13 @@ function SessionEditModal({ taskId, sessIdx, session, allTags, onSave, onCancel,
     setStartTime(`${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`);
   };
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: theme.bg, zIndex: 200, overflow: "auto", WebkitOverflowScrolling: "touch", animation: "fadeIn .2s" }}>
-      <div style={{ maxWidth: 420, margin: "0 auto", padding: "0 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "20px 0 12px", borderBottom: `1px solid ${theme.border}` }}>
-          <button onClick={onCancel} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Editar sesión</h2>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "16px 0 100px" }}>
+    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: theme.bg, zIndex: 300, display: "flex", flexDirection: "column" }}>
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "16px 16px 12px", borderBottom: `1px solid ${theme.border}` }}>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", padding: 4, display: "flex" }}>{I.back}</button>
+        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Editar sesión</h2>
+      </div>
+      <div style={{ flex: 1, overflowY: "scroll", WebkitOverflowScrolling: "touch", padding: "16px 16px 100px" }}>
+        <div style={{ maxWidth: 420, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
           <div style={{ fontSize: 13, color: theme.textSec, marginBottom: 6 }}>Fecha</div>
           <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={{ width: "100%", padding: "10px 8px", borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.surface, color: theme.text, fontSize: 15, outline: "none" }} />
